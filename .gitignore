@@ -1,0 +1,10 @@
+node_modules
+.output
+.wxt
+dist
+stats.html
+.DS_Store
+*.log
+web-ext.config.ts
+test-results
+playwright-report

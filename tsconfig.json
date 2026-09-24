@@ -1,0 +1,8 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true
+  },
+  "include": ["./.wxt/wxt.d.ts", "src", "tests", "wxt.config.ts", "vitest.config.ts"]
+}

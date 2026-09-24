@@ -1,0 +1,68 @@
+/*
+ * WebMark design tokens. Shared by extension pages (popup, side panel,
+ * dashboard) and the in-page UI (inside a shadow root, hence :host).
+ * Use px, not rem: inside web pages rem follows the site's root font size.
+ */
+:root,
+:host {
+  --wm-accent: #5b4cf5;
+  --wm-accent-hover: #4a3be0;
+  --wm-accent-soft: rgba(91, 76, 245, 0.12);
+  --wm-accent-contrast: #ffffff;
+
+  --wm-bg: #f7f7fb;
+  --wm-surface: #ffffff;
+  --wm-surface-2: #f1f1f6;
+  --wm-border: #e3e3ec;
+  --wm-border-strong: #cfcfdc;
+  --wm-text: #1b1b24;
+  --wm-text-muted: #6b6b7b;
+
+  --wm-success: #1f9d61;
+  --wm-success-soft: rgba(31, 157, 97, 0.12);
+  --wm-danger: #e0444a;
+  --wm-danger-soft: rgba(224, 68, 74, 0.12);
+  --wm-warning: #c98a00;
+
+  --wm-radius-sm: 6px;
+  --wm-radius: 10px;
+  --wm-radius-lg: 14px;
+  --wm-shadow: 0 1px 2px rgba(20, 20, 40, 0.06), 0 4px 16px rgba(20, 20, 40, 0.1);
+  --wm-shadow-lg: 0 2px 6px rgba(20, 20, 40, 0.08), 0 12px 40px rgba(20, 20, 40, 0.18);
+
+  --wm-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --wm-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+
+  /* In-page picker / pin colours (must read well on any site). */
+  --wm-highlight: #5b4cf5;
+  --wm-highlight-fill: rgba(91, 76, 245, 0.1);
+  --wm-pin-open: #5b4cf5;
+  --wm-pin-resolved: #1f9d61;
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  :host {
+    --wm-accent: #7c70ff;
+    --wm-accent-hover: #8f85ff;
+    --wm-accent-soft: rgba(124, 112, 255, 0.18);
+
+    --wm-bg: #121218;
+    --wm-surface: #1b1b23;
+    --wm-surface-2: #24242e;
+    --wm-border: #2e2e3a;
+    --wm-border-strong: #3d3d4b;
+    --wm-text: #ececf3;
+    --wm-text-muted: #9a9aab;
+
+    --wm-success: #3ec27f;
+    --wm-success-soft: rgba(62, 194, 127, 0.16);
+    --wm-danger: #ff6369;
+    --wm-danger-soft: rgba(255, 99, 105, 0.16);
+
+    --wm-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);
+    --wm-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+}
