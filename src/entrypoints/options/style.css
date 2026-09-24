@@ -178,3 +178,25 @@ body {
   flex-wrap: wrap;
   margin-bottom: 20px;
 }
+
+.wm-allnotes__bulk {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--wm-text);
+  background: var(--wm-surface);
+  border: 1px solid var(--wm-accent);
+  border-radius: var(--wm-radius);
+  box-shadow: var(--wm-shadow-lg);
+}
+
+.wm-allnotes__bulk-spacer {
+  flex: 1;
+}

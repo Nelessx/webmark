@@ -21,12 +21,13 @@ import { DEFAULT_SHORTCUTS, pinNumber } from '@/lib/constants';
 import { deleteNote, updateNote } from '@/lib/storage';
 import type { Note } from '@/lib/types';
 import { displayPageKey } from '@/lib/url';
+import { BulkBar } from './BulkBar';
 import { DataActions } from './DataActions';
 import { SettingsPanel } from './SettingsPanel';
 
 /*
  * "All notes" page: every note grouped by page, with search, status and tag
- * filters, export/import and settings. Bulk actions come later.
+ * filters, bulk actions, export/import and settings.
  */
 
 interface PageGroup {
@@ -114,6 +115,18 @@ export function App() {
     setStatus('all');
     setSelectedTags([]);
   };
+
+  // Bulk selection only ever covers notes that are currently shown.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const shownNotes = useMemo(() => visibleGroups.flatMap((g) => g.visible), [visibleGroups]);
+  const selectedNotes = useMemo(() => shownNotes.filter((n) => selectedIds.has(n.id)), [shownNotes, selectedIds]);
+  const setSelected = (id: string, on: boolean) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   // Scroll a deep-linked note into view once it has rendered.
   useEffect(() => {
@@ -210,6 +223,15 @@ export function App() {
         </section>
       ) : null}
 
+      {selectedNotes.length ? (
+        <BulkBar
+          selected={selectedNotes}
+          shownCount={shownNotes.length}
+          onSelectAll={() => setSelectedIds(new Set(shownNotes.map((n) => n.id)))}
+          onClear={() => setSelectedIds(new Set())}
+        />
+      ) : null}
+
       <main className="wm-allnotes__main">
         {loading ? null : notes.length === 0 ? (
           <EmptyState
@@ -235,6 +257,9 @@ export function App() {
                     <NoteCard
                       note={note}
                       highlighted={note.id === route.noteId}
+                      selectable
+                      selected={selectedIds.has(note.id)}
+                      onSelectChange={(on) => setSelected(note.id, on)}
                       pinNumber={pinNumber(note.id, group.notes)}
                       onLocate={() => void revealNote(note)}
                       locateLabel="Open on page"

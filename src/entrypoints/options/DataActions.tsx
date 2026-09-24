@@ -6,7 +6,7 @@ import { buildExportBundle, downloadFile, importBundle, parseExportBundle } from
 import { notesToCsv, notesToMarkdownReport } from '@/lib/format';
 import type { Note } from '@/lib/types';
 
-type ExportKind = 'markdown' | 'csv' | 'json' | 'json-lite';
+export type ExportKind = 'markdown' | 'csv' | 'json' | 'json-lite';
 
 function fileStamp(): string {
   const d = new Date();
@@ -14,7 +14,7 @@ function fileStamp(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-async function exportNotes(kind: ExportKind, notes: Note[]): Promise<void> {
+export async function exportNotes(kind: ExportKind, notes: Note[]): Promise<void> {
   const name = `webmark-${fileStamp()}`;
   switch (kind) {
     case 'markdown':
