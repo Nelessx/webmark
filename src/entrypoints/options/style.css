@@ -170,3 +170,11 @@ body {
   font-size: 12px;
   color: var(--wm-text-muted);
 }
+
+.wm-allnotes__filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}

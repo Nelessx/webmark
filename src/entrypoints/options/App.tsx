@@ -2,7 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/Button';
 import { IconSettings } from '@/components/icons';
 import { EmptyState } from '@/components/EmptyState';
+import {
+  collectTags,
+  countByStatus,
+  noteHasTags,
+  noteMatchesQuery,
+  noteMatchesStatus,
+  type StatusFilter,
+} from '@/components/filter';
 import { useAllNotes } from '@/components/hooks';
+import { Segmented } from '@/components/Segmented';
+import { TagList } from '@/components/TagList';
 import { Logo } from '@/components/Logo';
 import { NoteCard } from '@/components/NoteCard';
 import { Toaster } from '@/components/Toaster';
@@ -15,8 +25,8 @@ import { DataActions } from './DataActions';
 import { SettingsPanel } from './SettingsPanel';
 
 /*
- * "All notes" page: every note grouped by page, search, export/import and
- * settings. Status/tag filters and bulk actions come with the full dashboard.
+ * "All notes" page: every note grouped by page, with search, status and tag
+ * filters, export/import and settings. Bulk actions come later.
  */
 
 interface PageGroup {
@@ -24,12 +34,6 @@ interface PageGroup {
   title: string;
   /** Oldest first, so pin numbers match the in-page pins. */
   notes: Note[];
-}
-
-function matches(note: Note, query: string): boolean {
-  if (!query) return true;
-  const haystack = [note.label, note.body, note.pageTitle, note.url, ...note.tags].join('\n').toLowerCase();
-  return haystack.includes(query);
 }
 
 function groupByPage(notes: Note[]): PageGroup[] {
@@ -73,20 +77,43 @@ export function App() {
 
   const { notes, loading } = useAllNotes();
   const [query, setQuery] = useState('');
-  const normalizedQuery = query.trim().toLowerCase();
+  const [status, setStatus] = useState<StatusFilter>('all');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  const tagCounts = useMemo(() => collectTags(notes), [notes]);
+  // Ignore selected tags that no longer exist (e.g. removed in an edit).
+  const activeTags = useMemo(
+    () => selectedTags.filter((tag) => tagCounts.some((t) => t.tag === tag)),
+    [selectedTags, tagCounts],
+  );
+  const toggleTag = (tag: string) =>
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+
+  // Status counts reflect the search and tag filters, like the side panel.
+  const searched = useMemo(
+    () => notes.filter((n) => noteMatchesQuery(n, query) && noteHasTags(n, activeTags)),
+    [notes, query, activeTags],
+  );
+  const counts = countByStatus(searched);
 
   // Pin numbers come from the full page list, not the filtered one.
   const allGroups = useMemo(() => groupByPage(notes), [notes]);
-  const visibleGroups = useMemo(
-    () =>
-      allGroups
-        .map((group) => ({ ...group, visible: group.notes.filter((n) => matches(n, normalizedQuery)) }))
-        .filter((group) => group.visible.length > 0),
-    [allGroups, normalizedQuery],
-  );
+  const visibleGroups = useMemo(() => {
+    const shown = new Set(searched.filter((n) => noteMatchesStatus(n, status)).map((n) => n.id));
+    return allGroups
+      .map((group) => ({ ...group, visible: group.notes.filter((n) => shown.has(n.id)) }))
+      .filter((group) => group.visible.length > 0);
+  }, [allGroups, searched, status]);
 
   const openCount = notes.filter((n) => n.status === 'open').length;
-  const filteredNotes = normalizedQuery ? visibleGroups.flatMap((g) => g.visible) : null;
+  const filtersActive = query.trim() !== '' || status !== 'all' || activeTags.length > 0;
+  const filteredNotes = filtersActive ? visibleGroups.flatMap((g) => g.visible) : null;
+
+  const clearFilters = () => {
+    setQuery('');
+    setStatus('all');
+    setSelectedTags([]);
+  };
 
   // Scroll a deep-linked note into view once it has rendered.
   useEffect(() => {
@@ -130,6 +157,35 @@ export function App() {
       </div>
       {showSettings ? <SettingsPanel /> : null}
 
+      {notes.length ? (
+        <div className="wm-allnotes__filters">
+          <Segmented
+            label="Filter by status"
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: 'all', label: 'All', count: counts.all },
+              { value: 'open', label: 'Open', count: counts.open },
+              { value: 'resolved', label: 'Resolved', count: counts.resolved },
+            ]}
+          />
+          {tagCounts.length ? (
+            <TagList
+              label="Filter by tag"
+              tags={tagCounts.map((t) => t.tag)}
+              counts={Object.fromEntries(tagCounts.map((t) => [t.tag, t.count]))}
+              onTagClick={toggleTag}
+              activeTags={activeTags}
+            />
+          ) : null}
+          {filtersActive ? (
+            <Button size="sm" variant="ghost" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {route.welcome ? (
         <section className="wm-allnotes__welcome" aria-label="Welcome">
           <h2>Welcome to WebMark</h2>
@@ -161,7 +217,11 @@ export function App() {
             description={`Open any website, press ${DEFAULT_SHORTCUTS.startPicker} (or right-click → "Add WebMark note to this element"), pick an element and write your note.`}
           />
         ) : visibleGroups.length === 0 ? (
-          <EmptyState title="No matching notes" description="Try a different search." />
+          <EmptyState title="No matching notes" description="Try a different search, status or tag.">
+            <Button size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          </EmptyState>
         ) : (
           visibleGroups.map((group) => (
             <section key={group.pageKey} className="wm-allnotes__page">
@@ -180,6 +240,8 @@ export function App() {
                       locateLabel="Open on page"
                       onUpdate={(patch) => updateNote(note.pageKey, note.id, patch)}
                       onDelete={() => deleteNote(note.pageKey, note.id)}
+                      onTagClick={toggleTag}
+                      activeTags={activeTags}
                     />
                   </div>
                 ))}
