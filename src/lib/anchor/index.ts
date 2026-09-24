@@ -1,29 +1,20 @@
-// CONTRACT STUB — implemented by the anchor module owner. Signatures are fixed.
-import type { ElementAnchor } from '../types';
-
-export interface ResolveResult {
-  element: Element;
-  /** 0..1 — how sure we are this is the same element. */
-  confidence: number;
-  method: 'selector' | 'xpath' | 'fuzzy';
-}
-
-/** Capture every strategy needed to find `el` again later. */
-export function createAnchor(el: Element): ElementAnchor {
-  throw new Error('not implemented');
-}
-
-/** Find the element an anchor refers to, or null if no candidate is convincing enough. */
-export function resolveAnchor(anchor: ElementAnchor, doc: Document = document): ResolveResult | null {
-  throw new Error('not implemented');
-}
-
-/** Human-readable breadcrumb for an element, e.g. "Dashboard → Revenue Card". */
-export function buildLabel(el: Element): string {
-  throw new Error('not implemented');
-}
-
-/** Short technical description for the picker tooltip, e.g. "button.btn-primary". */
-export function describeElement(el: Element): string {
-  throw new Error('not implemented');
-}
+/*
+ * Element anchoring: remember an element so the SAME element can be found
+ * again after reloads, redeploys and layout changes — and never confidently
+ * return the wrong one.
+ *
+ *   createAnchor(el)        capture selector, XPath and a fingerprint
+ *   resolveAnchor(anchor)   selector → XPath → fuzzy scoring, or null
+ *   buildLabel(el)          "Dashboard → Revenue card"
+ *   describeElement(el)     "button#save.btn-primary"
+ */
+export { createAnchor } from './fingerprint';
+export { resolveAnchor, ACCEPT_SCORE, AMBIGUITY_MARGIN, type ResolveResult } from './resolve';
+export { buildLabel, describeElement } from './label';
+export { scoreCandidate, prepareAnchor, scoreFeatures, type ScoreBreakdown } from './score';
+export { buildSelector } from './selector';
+export { buildXPath, evaluateXPath } from './xpath';
+export { isStableId, isStableClass, stableClasses, looksGenerated, TEST_ID_ATTRIBUTES } from './stability';
+export { collectAttributes, IDENTIFYING_ATTRIBUTES } from './attributes';
+export { elementText } from './text';
+export { textSimilarity } from './similarity';

@@ -130,7 +130,9 @@ export function updateNote(pageKey: string, noteId: string, patch: NotePatch): P
     const i = notes.findIndex((n) => n.id === noteId);
     const current = notes[i];
     if (!current) return undefined;
-    const updated: Note = { ...current, ...patch, updatedAt: Date.now() };
+    // Skip keys set to undefined so a partial patch never erases stored fields.
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as NotePatch;
+    const updated: Note = { ...current, ...defined, updatedAt: Date.now() };
     notes[i] = updated;
     await writePage(pageKey, notes);
     return updated;
