@@ -1,6 +1,6 @@
 import { browser, type Browser, type PublicPath } from 'wxt/browser';
 import { listen } from './messages';
-import { DEFAULT_PRIORITY, isNotePriority, normalizeStatus } from './noteMeta';
+import { DEFAULT_PRIORITY, isArchivableStatus, isNotePriority, normalizeStatus } from './noteMeta';
 import * as shotDb from './screenshotDb';
 import { checkStorageRequest, isStorageRequest, STORAGE_REQUEST, type StorageRequest } from './storageRequests';
 import { DEFAULT_SETTINGS, NOTE_SCHEMA_VERSION, type Note, type NotePatch, type Settings } from './types';
@@ -222,10 +222,32 @@ function definedFields(patch: NotePatch): NotePatch {
   return Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) as NotePatch;
 }
 
-/** A note as it is stored: credentials in its URL redacted (see redactUrl). */
+/**
+ * A note as it is stored: credentials in its URL redacted (see redactUrl),
+ * and `archivedFrom` only on an archived note.
+ */
 function forStorage(note: Note): Note {
   const url = redactUrl(note.url);
-  return url === note.url ? note : { ...note, url };
+  const keepsFrom = note.status === 'archived' && isArchivableStatus(note.archivedFrom);
+  const strayFrom = note.archivedFrom !== undefined && !keepsFrom;
+  if (url === note.url && !strayFrom) return note;
+  const stored = { ...note, url };
+  if (strayFrom) delete stored.archivedFrom;
+  return stored;
+}
+
+/**
+ * Archiving remembers the status the note had (Note.archivedFrom), so
+ * unarchiving can put it back; any other status forgets it.
+ */
+function trackArchivedFrom(before: Note, after: Note): Note {
+  if (after.status === 'archived') {
+    return before.status === 'archived' ? after : { ...after, archivedFrom: before.status };
+  }
+  if (after.archivedFrom === undefined) return after;
+  const unarchived = { ...after };
+  delete unarchived.archivedFrom;
+  return unarchived;
 }
 
 interface PendingFocus {
@@ -266,7 +288,7 @@ const writer = {
       const i = notes.findIndex((n) => n.id === noteId);
       const current = notes[i];
       if (!current) return undefined;
-      const updated: Note = { ...current, ...definedFields(patch), updatedAt: now };
+      const updated = trackArchivedFrom(current, { ...current, ...definedFields(patch), updatedAt: now });
       notes[i] = updated;
       touched.add(pageKey);
       return updated;

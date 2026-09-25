@@ -94,6 +94,12 @@ export interface Note {
   label: string;
   body: string;
   status: NoteStatus;
+  /**
+   * While archived: the status the note had before, so unarchiving puts it
+   * back (storage keeps this in step with the status). Absent otherwise, and
+   * on notes archived before it was kept, which unarchive to open.
+   */
+  archivedFrom?: Exclude<NoteStatus, 'archived'>;
   priority: NotePriority;
   tags: string[];
   /** Who wrote the note (from settings.authorName). Empty string if unset. */

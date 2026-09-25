@@ -100,13 +100,15 @@ export function MenuButton<T extends string>({
     if (!open) return;
     const inside = (target: EventTarget | null) =>
       target instanceof Node && (!!menuRef.current?.contains(target) || !!buttonRef.current?.contains(target));
+    // The press puts focus where it lands; a scroll or resize would leave it nowhere, so it goes back to the button.
+    const focusInMenu = () => !!menuRef.current?.contains(document.activeElement);
     const onPointerDown = (event: PointerEvent) => {
       if (!inside(event.target)) hide(false);
     };
     const onScroll = (event: Event) => {
-      if (!inside(event.target)) hide(false);
+      if (!inside(event.target)) hide(focusInMenu());
     };
-    const onResize = () => hide(false);
+    const onResize = () => hide(focusInMenu());
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onResize);

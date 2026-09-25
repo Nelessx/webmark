@@ -1,4 +1,4 @@
-import type { NotePriority, NoteStatus } from './types';
+import type { Note, NotePriority, NoteStatus } from './types';
 
 /*
  * Status and priority vocabulary shared by every part of WebMark: storage,
@@ -54,6 +54,16 @@ export function isActiveStatus(status: NoteStatus): boolean {
 /** Archived notes are put away: no pin on the page, and not part of "All". */
 export function isArchivedStatus(status: NoteStatus): boolean {
   return status === 'archived';
+}
+
+/** Any status but archived: what a note can be archived from (see Note.archivedFrom). */
+export function isArchivableStatus(value: unknown): value is Exclude<NoteStatus, 'archived'> {
+  return isNoteStatus(value) && value !== 'archived';
+}
+
+/** The status unarchiving gives a note: the one it was archived from, else open. */
+export function statusOnUnarchive(note: Pick<Note, 'archivedFrom'>): NoteStatus {
+  return isArchivableStatus(note.archivedFrom) ? note.archivedFrom : 'open';
 }
 
 /** For sorting: high first. */

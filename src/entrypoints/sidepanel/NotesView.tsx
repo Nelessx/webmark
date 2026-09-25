@@ -17,6 +17,7 @@ import { SearchInput } from '@/components/SearchInput';
 import { Segmented } from '@/components/Segmented';
 import { TagList } from '@/components/TagList';
 import type { CurrentPage } from '@/components/useCurrentPage';
+import { useFocusKeeper } from '@/components/useFocusKeeper';
 import { pinNumber } from '@/lib/constants';
 import { sendToTab } from '@/lib/messages';
 import { deleteNote, updateNote } from '@/lib/storage';
@@ -41,6 +42,7 @@ export function NotesView({ page }: NotesViewProps) {
   const [priority, setPriority] = useState<PriorityFilter>('all');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLElement>(null);
   useSlashFocuses(searchRef);
 
   const tagCounts = useMemo(() => collectTags(page.notes), [page.notes]);
@@ -58,6 +60,8 @@ export function NotesView({ page }: NotesViewProps) {
   const found = visible.filter((n) => !page.orphanedIds.has(n.id));
   const orphaned = visible.filter((n) => page.orphanedIds.has(n.id));
   const narrowed = filtersActive(filters);
+  // A card that leaves the list (archived, say) hands keyboard focus to the one in its place.
+  useFocusKeeper(listRef, [...found, ...orphaned].map((n) => n.id));
 
   const toggleTag = (tag: string) =>
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -147,7 +151,7 @@ export function NotesView({ page }: NotesViewProps) {
         ) : null}
       </div>
 
-      <main className="sp-list" aria-label="Notes on this page">
+      <main ref={listRef} className="sp-list" aria-label="Notes on this page" tabIndex={-1}>
         {found.map(renderCard)}
 
         {orphaned.length ? (

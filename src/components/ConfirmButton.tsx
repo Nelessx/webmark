@@ -18,6 +18,8 @@ export interface ConfirmButtonProps {
   timeoutMs?: number;
   disabled?: boolean;
   className?: string;
+  /** data-* attributes of the button. */
+  data?: Readonly<Record<`data-${string}`, string>>;
 }
 
 /**
@@ -36,6 +38,7 @@ export function ConfirmButton({
   timeoutMs = 3000,
   disabled,
   className,
+  data,
 }: ConfirmButtonProps) {
   const [armed, setArmed] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -72,6 +75,7 @@ export function ConfirmButton({
       disabled={disabled}
       aria-label={compactIdle ? label : undefined}
       title={compactIdle ? label : undefined}
+      {...data}
     >
       {icon ? <span className="wm-btn__icon">{icon}</span> : null}
       {compactIdle ? null : (

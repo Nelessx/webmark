@@ -22,20 +22,24 @@ export const PRIORITY_MENU_OPTIONS: readonly MenuOption<NotePriority>[] = NOTE_P
   ),
 }));
 
+/** Extra data-* attributes for a menu's button. */
+type DataAttributes = Readonly<Record<`data-${string}`, string>>;
+
 export interface StatusMenuProps {
   status: NoteStatus;
   onChange: (status: NoteStatus) => void;
   disabled?: boolean;
+  data?: DataAttributes;
 }
 
 /** The note's status pill; clicking it offers every status. */
-export function StatusMenu({ status, onChange, disabled }: StatusMenuProps) {
+export function StatusMenu({ status, onChange, disabled, data }: StatusMenuProps) {
   return (
     <MenuButton
       label={`Status: ${STATUS_LABELS[status]}`}
       menuLabel="Status"
       className="wm-status"
-      data={{ 'data-status': status }}
+      data={{ ...data, 'data-status': status }}
       value={status}
       options={STATUS_MENU_OPTIONS}
       onSelect={onChange}
@@ -50,16 +54,17 @@ export interface PriorityMenuProps {
   priority: NotePriority;
   onChange: (priority: NotePriority) => void;
   disabled?: boolean;
+  data?: DataAttributes;
 }
 
 /** The note's priority chip; clicking it offers every priority. */
-export function PriorityMenu({ priority, onChange, disabled }: PriorityMenuProps) {
+export function PriorityMenu({ priority, onChange, disabled, data }: PriorityMenuProps) {
   return (
     <MenuButton
       label={`Priority: ${PRIORITY_LABELS[priority]}`}
       menuLabel="Priority"
       className="wm-priority"
-      data={{ 'data-priority': priority }}
+      data={{ ...data, 'data-priority': priority }}
       value={priority}
       options={PRIORITY_MENU_OPTIONS}
       onSelect={onChange}

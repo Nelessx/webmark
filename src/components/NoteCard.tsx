@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatRelativeTime, noteToMarkdown } from '@/lib/format';
-import { PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
+import { PRIORITY_LABELS, STATUS_LABELS, statusOnUnarchive } from '@/lib/noteMeta';
 import type { Note, NotePatch, NotePriority, NoteStatus } from '@/lib/types';
 import { displayPageKey, siteOf } from '@/lib/url';
 import { IconButton } from './Button';
@@ -25,6 +25,7 @@ import { PinBadge } from './PinBadge';
 import { copyText } from './platform';
 import { ScreenshotThumb } from './ScreenshotThumb';
 import { TagList } from './TagList';
+import { CARD_CONTROL } from './useFocusKeeper';
 
 export interface NoteCardProps {
   note: Note;
@@ -62,13 +63,25 @@ interface NextStep {
   icon: ReactNode;
 }
 
-/** The one-click step from each status; any other status is two clicks away in the status menu. */
-const NEXT_STEP: Readonly<Record<NoteStatus, NextStep>> = {
-  open: { status: 'in_progress', label: 'Start', icon: <IconPlay /> },
-  in_progress: { status: 'completed', label: 'Complete', icon: <IconCheck /> },
-  completed: { status: 'open', label: 'Reopen', icon: <IconRotateCcw /> },
-  archived: { status: 'open', label: 'Unarchive', icon: <IconArchiveRestore /> },
-};
+/** The one-click step from the note's status; any other status is two clicks away in the status menu. */
+function nextStep(note: Note): NextStep {
+  switch (note.status) {
+    case 'open':
+      return { status: 'in_progress', label: 'Start', icon: <IconPlay /> };
+    case 'in_progress':
+      return { status: 'completed', label: 'Complete', icon: <IconCheck /> };
+    case 'completed':
+      return { status: 'open', label: 'Reopen', icon: <IconRotateCcw /> };
+    case 'archived':
+      // Back to the status it had before it was archived.
+      return { status: statusOnUnarchive(note), label: 'Unarchive', icon: <IconArchiveRestore /> };
+  }
+}
+
+/** The card's controls, named (CARD_CONTROL) so focus can move to the same control on another card: see useFocusKeeper. */
+export type CardControl = 'select' | 'status' | 'priority' | 'next' | 'locate' | 'copy' | 'edit' | 'delete';
+
+const control = (name: CardControl) => ({ [CARD_CONTROL]: name });
 
 function relativeTime(timestamp: number, now: number): string {
   try {
@@ -109,7 +122,7 @@ export function NoteCard({
   const now = useNow();
   const headingId = useId();
   const pinText = pinNumber ? `#${pinNumber}` : '';
-  const next = NEXT_STEP[note.status];
+  const next = nextStep(note);
 
   // Return focus to the Edit button when the inline editor closes.
   useEffect(() => {
@@ -188,6 +201,8 @@ export function NoteCard({
       data-status={note.status}
       data-priority={note.priority}
       aria-labelledby={headingId}
+      // Focus comes here when the control that had it goes (useFocusKeeper).
+      tabIndex={-1}
     >
       <div className="wm-note-card__head">
         {selectable ? (
@@ -197,6 +212,7 @@ export function NoteCard({
             checked={!!selected}
             onChange={(e) => onSelectChange?.(e.target.checked)}
             aria-label={`Select note ${pinText} ${note.label}`.replace(/\s+/g, ' ')}
+            {...control('select')}
           />
         ) : null}
         {pinNumber !== undefined ? (
@@ -221,8 +237,8 @@ export function NoteCard({
           ) : null}
           {editing ? null : (
             <div className="wm-note-card__props">
-              <StatusMenu status={note.status} onChange={setStatus} />
-              <PriorityMenu priority={note.priority} onChange={setPriority} />
+              <StatusMenu status={note.status} onChange={setStatus} data={control('status')} />
+              <PriorityMenu priority={note.priority} onChange={setPriority} data={control('priority')} />
             </div>
           )}
         </div>
@@ -262,17 +278,31 @@ export function NoteCard({
                 title={`${next.label}: mark as ${STATUS_LABELS[next.status]}`}
                 icon={next.icon}
                 onClick={() => setStatus(next.status)}
+                {...control('next')}
               />
               {onLocate ? (
-                <IconButton size="sm" label={locateLabel} icon={<IconCrosshair />} onClick={onLocate} />
+                <IconButton
+                  size="sm"
+                  label={locateLabel}
+                  icon={<IconCrosshair />}
+                  onClick={onLocate}
+                  {...control('locate')}
+                />
               ) : null}
-              <IconButton size="sm" label="Copy as Markdown" icon={<IconCopy />} onClick={() => void copyMarkdown()} />
+              <IconButton
+                size="sm"
+                label="Copy as Markdown"
+                icon={<IconCopy />}
+                onClick={() => void copyMarkdown()}
+                {...control('copy')}
+              />
               <IconButton
                 ref={editButtonRef}
                 size="sm"
                 label="Edit note"
                 icon={<IconPencil />}
                 onClick={() => setEditing(true)}
+                {...control('edit')}
               />
               <ConfirmButton
                 iconOnly
@@ -282,6 +312,7 @@ export function NoteCard({
                 confirmLabel="Delete?"
                 icon={<IconTrash />}
                 onConfirm={() => void remove()}
+                data={control('delete')}
               />
             </div>
           </div>

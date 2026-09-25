@@ -159,6 +159,7 @@ test.describe('statuses and priorities', () => {
     await expect(panel.getByRole('menuitemradio', { name: 'Completed' })).toBeFocused();
     await panel.getByRole('menuitemradio', { name: 'Archived' }).press('Enter');
     await expect.poll(async () => (await ext.note(page, id))?.status).toBe('archived');
+    expect((await ext.note(page, id))?.archivedFrom).toBe('completed');
     await expect(pin).toHaveCount(0);
     // Pin numbers don't move: #2 is still #2.
     await expect(wm.pin(other.id)).toHaveText('2');
@@ -167,6 +168,8 @@ test.describe('statuses and priorities', () => {
     await expect.poll(() => ext.badgeText(page)).toBe('1');
     await expect(cards).toHaveCount(1);
     await expect(cards).toHaveAttribute('data-note-id', other.id);
+    // The keyboard carries on from the card that took its place.
+    await expect(cards.getByRole('button', { name: 'Status: Open' })).toBeFocused();
     await expect(statusFilter.getByRole('radio')).toHaveText(['All 1', 'Open 1', 'In progress 0', 'Completed 0', 'Archived 1']);
     await statusFilter.getByRole('radio', { name: /Archived/ }).press('Enter');
     await expect(cards).toHaveCount(1);
@@ -181,12 +184,17 @@ test.describe('statuses and priorities', () => {
     await expect(cards).toHaveCount(1);
     await expect(cards).toHaveAttribute('data-note-id', other.id);
 
-    // Unarchived, its pin is back with its old number.
+    // Unarchived, it is Completed again (what it was archived from), and its pin is back with its old number.
     await statusFilter.getByRole('radio', { name: /Archived/ }).press('Enter');
+    await expect(card.getByRole('button', { name: 'Unarchive' })).toHaveAttribute('title', 'Unarchive: mark as Completed');
     await card.getByRole('button', { name: 'Unarchive' }).press('Enter');
-    await expect.poll(async () => (await ext.note(page, id))?.status).toBe('open');
+    await expect.poll(async () => (await ext.note(page, id))?.status).toBe('completed');
+    expect(await ext.note(page, id)).not.toHaveProperty('archivedFrom');
     await expect(pin).toHaveText('1');
-    await expect.poll(() => ext.badgeText(page)).toBe('2');
+    await expect(pin).toHaveAttribute('data-status', 'completed');
+    await expect.poll(() => ext.badgeText(page)).toBe('1');
+    // Nothing is archived any more: focus goes to what the empty list offers.
+    await expect(panel.locator('.sp-list').getByRole('button', { name: 'Clear filters' })).toBeFocused();
   });
 
   test('All notes: filter by status and priority, sort by priority, bulk-set priority and status, export what is shown', async ({
@@ -279,6 +287,78 @@ test.describe('statuses and priorities', () => {
       await expect(card.getByRole('button', { name: 'Status: Completed' })).toBeVisible();
       await expect(card.getByRole('button', { name: 'Priority: Low' })).toBeVisible();
     }
+  });
+
+  test('All notes from the keyboard: focus stays in the list as notes are archived, and unarchiving restores each status', async ({
+    page,
+    ext,
+    server,
+  }) => {
+    const url = server.url('/dashboard.html');
+    const options = await openExtensionPage(page, ext, 'options.html');
+    await seed(options, [
+      seeded(url, 'b1', 'open', 'low', 1),
+      seeded(url, 'b2', 'in_progress', 'high', 2),
+      seeded(url, 'b3', 'completed', 'medium', 3),
+      seeded(url, 'b4', 'open', 'medium', 4),
+    ]);
+    const cards = options.locator('article.wm-note-card');
+    const card = (noteId: string) => options.locator(`article[data-note-id="${noteId}"]`);
+    const shown = () => cards.evaluateAll((list) => list.map((el) => el.getAttribute('data-note-id')));
+    const stored = async () => (await ext.notes(url)).map((n) => [n.id, n.status, n.archivedFrom ?? null]);
+    await expect.poll(shown).toEqual(['b1', 'b2', 'b3', 'b4']);
+
+    // Archive b2 from its status menu: its card goes, and focus moves to the same menu on the next card.
+    await card('b2').getByRole('button', { name: 'Status: In progress' }).focus();
+    await options.keyboard.press('ArrowUp');
+    await expect(options.getByRole('menuitemradio', { name: 'Archived' })).toBeFocused();
+    await options.keyboard.press('Enter');
+    await expect.poll(shown).toEqual(['b1', 'b3', 'b4']);
+    await expect(card('b3').getByRole('button', { name: 'Status: Completed' })).toBeFocused();
+
+    // Sorted by priority, a card that moves keeps focus.
+    await options.getByRole('combobox', { name: 'Sort notes on each page' }).selectOption('priority');
+    await expect.poll(shown).toEqual(['b3', 'b4', 'b1']);
+    await card('b3').getByRole('button', { name: 'Priority: Medium' }).focus();
+    await options.keyboard.press('ArrowDown');
+    await expect(options.getByRole('menuitemradio', { name: 'Medium' })).toBeFocused();
+    await options.keyboard.press('ArrowDown');
+    await options.keyboard.press('Enter');
+    await expect.poll(shown).toEqual(['b4', 'b1', 'b3']);
+    await expect(card('b3').getByRole('button', { name: 'Priority: Low' })).toBeFocused();
+
+    // Bulk-archive b4 and b1: the bulk bar goes, and focus goes to the card that took their place.
+    await card('b4').getByRole('checkbox').press('Space');
+    await card('b1').getByRole('checkbox').press('Space');
+    const bulk = options.getByRole('toolbar', { name: 'Bulk actions' });
+    await expect(bulk).toContainText('2 selected');
+    await bulk.getByRole('button', { name: 'Set status' }).focus();
+    await options.keyboard.press('ArrowUp');
+    await expect(bulk.getByRole('menuitem', { name: 'Archived' })).toBeFocused();
+    await options.keyboard.press('Enter');
+    await expect.poll(shown).toEqual(['b3']);
+    await expect(bulk).toHaveCount(0);
+    await expect(card('b3').getByRole('checkbox')).toBeFocused();
+    await expect.poll(stored).toEqual([
+      ['b1', 'archived', 'open'],
+      ['b2', 'archived', 'in_progress'],
+      ['b3', 'completed', null],
+      ['b4', 'archived', 'open'],
+    ]);
+
+    // Unarchive them all at once: each goes back to its own status, not all to Open.
+    await options.getByRole('radiogroup', { name: 'Filter by status' }).getByRole('radio', { name: /Archived/ }).click();
+    await expect.poll(shown).toEqual(['b2', 'b4', 'b1']);
+    for (const noteId of ['b2', 'b4', 'b1']) await card(noteId).getByRole('checkbox').check();
+    await expect(bulk).toContainText('3 selected');
+    await bulk.getByRole('button', { name: 'Unarchive' }).click();
+    await expect(options.getByText('Unarchived 3 notes')).toBeVisible();
+    await expect.poll(stored).toEqual([
+      ['b1', 'open', null],
+      ['b2', 'in_progress', null],
+      ['b3', 'completed', null],
+      ['b4', 'open', null],
+    ]);
   });
 
   test('a note saved before four statuses existed shows as Completed, Medium priority everywhere', async ({

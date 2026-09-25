@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { ConfirmButton } from '@/components/ConfirmButton';
-import { IconDownload, IconTrash, IconX } from '@/components/icons';
+import { IconArchiveRestore, IconDownload, IconTrash, IconX } from '@/components/icons';
 import { MenuButton } from '@/components/MenuButton';
 import { PRIORITY_MENU_OPTIONS, STATUS_MENU_OPTIONS } from '@/components/NoteMenus';
 import { showToast } from '@/components/toast';
-import { PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
+import { isArchivedStatus, PRIORITY_LABELS, STATUS_LABELS, statusOnUnarchive } from '@/lib/noteMeta';
 import { deleteNotes, updateNotes } from '@/lib/storage';
 import type { Note, NotePatch } from '@/lib/types';
 import { exportNotes } from './DataActions';
@@ -49,6 +49,16 @@ export function BulkBar({ selected, shownCount, onSelectAll, onClear }: BulkBarP
     );
   };
 
+  const archived = selected.filter((n) => isArchivedStatus(n.status));
+
+  /** Each archived note goes back to the status it was archived from, rather than all to one. */
+  const unarchive = () =>
+    run(`Unarchived ${plural(archived.length)}`, `Couldn't unarchive ${plural(archived.length)}.`, () =>
+      updateNotes(
+        archived.map((n) => ({ pageKey: n.pageKey, noteId: n.id, patch: { status: statusOnUnarchive(n) } })),
+      ),
+    );
+
   const remove = async () => {
     const done = await run(`Deleted ${plural(count)}`, `Deleting ${plural(count)} failed.`, () =>
       deleteNotes(selected.map((n) => ({ pageKey: n.pageKey, noteId: n.id }))),
@@ -65,6 +75,11 @@ export function BulkBar({ selected, shownCount, onSelectAll, onClear }: BulkBarP
         </Button>
       ) : null}
       <span className="wm-allnotes__bulk-spacer" />
+      {archived.length ? (
+        <Button size="sm" icon={<IconArchiveRestore />} disabled={busy} onClick={() => void unarchive()}>
+          Unarchive
+        </Button>
+      ) : null}
       <MenuButton
         label="Set status"
         menuLabel={`Set the status of ${plural(count)}`}

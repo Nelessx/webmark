@@ -1,4 +1,4 @@
-import { isNotePriority, isNoteStatus } from './noteMeta';
+import { isArchivableStatus, isNotePriority, isNoteStatus } from './noteMeta';
 import { isScreenshotDataUrl } from './screenshotDb';
 import type { StorageOp } from './storage';
 import type { NotePatch, Settings } from './types';
@@ -61,6 +61,7 @@ const NOTE_FIELDS: Record<string, Check> = {
   label: isText,
   body: isText,
   status: isStatus,
+  archivedFrom: (value) => value === undefined || isArchivableStatus(value),
   priority: isPriority,
   tags: isTextList,
   author: isText,

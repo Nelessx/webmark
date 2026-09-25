@@ -1,6 +1,6 @@
 import { TEST_ID_ATTRIBUTES } from './anchor/stability';
 import { NOTE_LIMITS as LIMIT } from './limits';
-import { DEFAULT_PRIORITY, isNotePriority, normalizeStatus } from './noteMeta';
+import { DEFAULT_PRIORITY, isArchivableStatus, isNotePriority, normalizeStatus } from './noteMeta';
 import { isScreenshotDataUrl } from './screenshotDb';
 import { bulkPutNotes, deleteAllNotes, getAllNotes, getScreenshots } from './storage';
 import { NOTE_SCHEMA_VERSION, type AnchorItem, type DocRect, type ElementAnchor, type Note, type NoteStatus } from './types';
@@ -124,6 +124,7 @@ const status = simple(
   "'open', 'in_progress', 'completed' or 'archived'",
 );
 const priority = simple(isNotePriority, "'low', 'medium' or 'high'");
+const archivable = simple(isArchivableStatus, "'open', 'in_progress' or 'completed'");
 const count = simple((v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0, 'a whole number of 0 or more');
 const testIdName = simple(
   (v): v is string => typeof v === 'string' && (TEST_ID_ATTRIBUTES as readonly string[]).includes(v),
@@ -271,7 +272,7 @@ function parseNote(raw: unknown, index: number): Note {
   if (!isRecord(raw)) throw new Error(`${ctx.owner} is not a valid note.`);
   const id = required(raw, 'id', nonEmptyText(LIMIT.id), ctx);
   const url = required(raw, 'url', pageUrl, ctx);
-  return {
+  const note: Note = {
     id,
     schemaVersion: NOTE_SCHEMA_VERSION,
     pageKey: parsePageKey(raw, url, ctx),
@@ -289,6 +290,10 @@ function parseNote(raw: unknown, index: number): Note {
     createdAt: required(raw, 'createdAt', finiteNumber, ctx),
     updatedAt: required(raw, 'updatedAt', finiteNumber, ctx),
   };
+  // What an archived note unarchives to; meaningless on any other.
+  const archivedFrom = optional(raw, 'archivedFrom', archivable, ctx);
+  if (archivedFrom && note.status === 'archived') note.archivedFrom = archivedFrom;
+  return note;
 }
 
 function parseScreenshots(raw: unknown, noteIds: Set<string>): Record<string, string> {

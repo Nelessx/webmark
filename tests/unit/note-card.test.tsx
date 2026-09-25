@@ -133,6 +133,26 @@ describe('note card status and priority', () => {
     await vi.waitFor(() => expect(onUpdate).toHaveBeenCalledWith({ status: next }));
   });
 
+  it.each(['in_progress', 'completed'] as const)('unarchives a note archived from %s back to it', async (from) => {
+    const onUpdate = vi.fn(async (_patch: NotePatch) => {});
+    renderCard({ ...base, status: 'archived', archivedFrom: from }, onUpdate);
+    const unarchive = button('Unarchive');
+    expect(unarchive.title).toBe(`Unarchive: mark as ${from === 'completed' ? 'Completed' : 'In progress'}`);
+    unarchive.click();
+    await vi.waitFor(() => expect(onUpdate).toHaveBeenCalledWith({ status: from }));
+  });
+
+  it('puts focus back on the menu button when a scroll closes the menu', async () => {
+    renderCard(base, async () => {});
+    const status = button('Status: Open');
+    status.focus();
+    status.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('Open'));
+    document.body.dispatchEvent(new Event('scroll'));
+    await vi.waitFor(() => expect(menu()).toBeNull());
+    expect(document.activeElement).toBe(status);
+  });
+
   it('works from the keyboard: arrows move, Enter picks, Escape closes back on the button', async () => {
     const onUpdate = vi.fn(async (_patch: NotePatch) => {});
     renderCard(base, onUpdate);

@@ -319,6 +319,8 @@ describe('the writer checks every request (defence in depth)', () => {
     ['a patch that changes the page', 'updateNote', [PAGE_A, 'n1', { pageKey: PAGE_B }]],
     ['a patch that changes the id', 'updateNotes', [[{ pageKey: PAGE_A, noteId: 'n1', patch: { id: 'other' } }]]],
     ['a patch with a bad status', 'updateNote', [PAGE_A, 'n1', { status: 'done' }]],
+    ['a patch that sets what a note was archived from', 'updateNote', [PAGE_A, 'n1', { archivedFrom: 'open' }]],
+    ['a note archived from "archived"', 'saveNote', [{ ...makeNote(), status: 'archived', archivedFrom: 'archived' }]],
     ['an SVG screenshot (it can carry script)', 'saveScreenshot', ['n1', 'data:image/svg+xml;base64,PHN2Zz4=']],
     ['a screenshot that is a link', 'saveScreenshot', ['n1', 'https://evil.example/pixel.png']],
     ['an import with a bad screenshot', 'bulkPutNotes', [[makeNote()], { x: 'javascript:alert(1)' }]],

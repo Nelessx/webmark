@@ -19,13 +19,14 @@ import { priorityFilterOptions, statusFilterOptions } from '@/components/filterO
 import { useAllNotes } from '@/components/hooks';
 import { IconSettings } from '@/components/icons';
 import { Logo } from '@/components/Logo';
-import { NoteCard } from '@/components/NoteCard';
+import { NoteCard, type CardControl } from '@/components/NoteCard';
 import { PriorityIcon } from '@/components/PriorityIcon';
 import { Segmented } from '@/components/Segmented';
 import { StatusDot } from '@/components/StatusBadge';
 import { TagList } from '@/components/TagList';
 import { Toaster } from '@/components/Toaster';
 import { showToast } from '@/components/toast';
+import { useFocusKeeper } from '@/components/useFocusKeeper';
 import { revealNote } from '@/lib/compat';
 import { DEFAULT_SHORTCUTS, pinNumber } from '@/lib/constants';
 import { isArchivedStatus, NOTE_STATUSES, STATUS_LABELS } from '@/lib/noteMeta';
@@ -148,6 +149,16 @@ export function App() {
       else next.delete(id);
       return next;
     });
+
+  // A card that leaves the list (archived, say) hands keyboard focus to the one in its place.
+  // When the bulk bar goes, focus goes to the first note that was selected, or the one in its place.
+  const listRef = useRef<HTMLElement>(null);
+  const firstSelected = selectedNotes[0];
+  useFocusKeeper(
+    listRef,
+    shownNotes.map((n) => n.id),
+    firstSelected && { cardId: firstSelected.id, control: 'select' satisfies CardControl },
+  );
 
   // A deep-linked archived note is only listed under Archived: switch there once.
   const revealedArchived = useRef<string | undefined>(undefined);
@@ -288,16 +299,15 @@ export function App() {
         </section>
       ) : null}
 
-      {selectedNotes.length ? (
-        <BulkBar
-          selected={selectedNotes}
-          shownCount={shownNotes.length}
-          onSelectAll={() => setSelectedIds(new Set(shownNotes.map((n) => n.id)))}
-          onClear={() => setSelectedIds(new Set())}
-        />
-      ) : null}
-
-      <main className="wm-allnotes__main">
+      <main ref={listRef} className="wm-allnotes__main" aria-label="Notes" tabIndex={-1}>
+        {selectedNotes.length ? (
+          <BulkBar
+            selected={selectedNotes}
+            shownCount={shownNotes.length}
+            onSelectAll={() => setSelectedIds(new Set(shownNotes.map((n) => n.id)))}
+            onClear={() => setSelectedIds(new Set())}
+          />
+        ) : null}
         {loading ? null : notes.length === 0 ? (
           <EmptyState
             title="No notes yet"

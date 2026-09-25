@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { buildExportBundle, downloadFile, importBundle, parseExportBundle, type ExportBundle } from '@/lib/export';
 import { NOTE_LIMITS } from '@/lib/limits';
-import { getAllNotes, getNote, getScreenshot, getSettings, saveNote, saveScreenshot, saveSettings } from '@/lib/storage';
+import { getAllNotes, getNote, getScreenshot, getSettings, saveNote, saveScreenshot, saveSettings, updateNote } from '@/lib/storage';
 import { NOTE_SCHEMA_VERSION, type Note } from '@/lib/types';
 
 const PAGE_A = 'https://example.com/dashboard';
@@ -177,6 +177,31 @@ describe('parseExportBundle', () => {
       ['completed', 'high'],
       ['archived', 'low'],
     ]);
+  });
+
+  it('round-trips the status an archived note goes back to', async () => {
+    const note = await saveNote(makeNote({ status: 'in_progress' }));
+    await updateNote(note.pageKey, note.id, { status: 'archived' });
+
+    const bundle = await buildExportBundle();
+    expect(bundle.notes[0]).toMatchObject({ status: 'archived', archivedFrom: 'in_progress' });
+    expect(parseExportBundle(JSON.stringify(bundle))).toEqual(bundle);
+  });
+
+  it('keeps archivedFrom only on archived notes', () => {
+    const notes = [
+      rawNote({ id: 'a', status: 'archived', archivedFrom: 'completed' }),
+      rawNote({ id: 'b', status: 'open', archivedFrom: 'completed' }),
+    ];
+    const [archived, open] = parseExportBundle(bundleJson({ notes })).notes;
+    expect(archived).toMatchObject({ status: 'archived', archivedFrom: 'completed' });
+    expect(open).not.toHaveProperty('archivedFrom');
+  });
+
+  it('rejects an archivedFrom that is not a status a note can be archived from', () => {
+    expect(() => parseExportBundle(bundleJson({ notes: [rawNote({ status: 'archived', archivedFrom: 'archived' })] }))).toThrow(
+      "Note 1 has an invalid 'archivedFrom' (expected 'open', 'in_progress' or 'completed').",
+    );
   });
 
   it('rejects an unknown priority', () => {

@@ -191,6 +191,49 @@ describe('updateNote', () => {
   });
 });
 
+describe('archiving remembers the status a note had', () => {
+  it('keeps it while the note stays archived, and forgets it when the note leaves the archive', async () => {
+    await saveNote(makeNote({ id: 'x', status: 'in_progress' }));
+
+    expect(await updateNote(PAGE_A, 'x', { status: 'archived' })).toMatchObject({ status: 'archived', archivedFrom: 'in_progress' });
+    // Saving the archived note again (the page's editor sends its status along) keeps it.
+    expect(await updateNote(PAGE_A, 'x', { status: 'archived', body: 'Edited' })).toMatchObject({ archivedFrom: 'in_progress' });
+    expect(await getNote(PAGE_A, 'x')).toMatchObject({ archivedFrom: 'in_progress' });
+
+    expect(await updateNote(PAGE_A, 'x', { status: 'in_progress' })).not.toHaveProperty('archivedFrom');
+    expect(await getNote(PAGE_A, 'x')).not.toHaveProperty('archivedFrom');
+  });
+
+  it("remembers each note's own status when many are archived at once", async () => {
+    await saveNote(makeNote({ id: 'a', status: 'open', createdAt: 1 }));
+    await saveNote(makeNote({ id: 'b', status: 'completed', createdAt: 2 }));
+    // Archived before the status was kept: it has nothing to remember.
+    await saveNote(makeNote({ id: 'c', status: 'archived', createdAt: 3 }));
+
+    await updateNotes(['a', 'b', 'c'].map((noteId) => ({ pageKey: PAGE_A, noteId, patch: { status: 'archived' } })));
+
+    expect((await getNotesForPage(PAGE_A)).map((n) => [n.id, n.status, n.archivedFrom])).toEqual([
+      ['a', 'archived', 'open'],
+      ['b', 'archived', 'completed'],
+      ['c', 'archived', undefined],
+    ]);
+  });
+
+  it('stores it only on archived notes, whichever way a note arrives', async () => {
+    await saveNote(makeNote({ id: 'saved-open', status: 'open', archivedFrom: 'completed' }));
+    await saveNote(makeNote({ id: 'saved-archived', status: 'archived', archivedFrom: 'completed' }));
+    await bulkPutNotes([
+      makeNote({ id: 'imported-open', status: 'in_progress', archivedFrom: 'open' }),
+      makeNote({ id: 'imported-archived', status: 'archived', archivedFrom: 'in_progress' }),
+    ]);
+
+    expect(await getNote(PAGE_A, 'saved-open')).not.toHaveProperty('archivedFrom');
+    expect(await getNote(PAGE_A, 'saved-archived')).toMatchObject({ archivedFrom: 'completed' });
+    expect(await getNote(PAGE_A, 'imported-open')).not.toHaveProperty('archivedFrom');
+    expect(await getNote(PAGE_A, 'imported-archived')).toMatchObject({ archivedFrom: 'in_progress' });
+  });
+});
+
 describe('deleteNote', () => {
   it('removes the note and its screenshot', async () => {
     await saveNote(makeNote({ id: 'keep' }));
