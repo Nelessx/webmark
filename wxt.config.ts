@@ -34,7 +34,12 @@ export default defineConfig({
     ...(browser === 'firefox'
       ? {
           browser_specific_settings: {
-            gecko: { id: 'webmark@webmark.local', strict_min_version: '115.0' },
+            gecko: {
+              id: 'webmark@webmark.local',
+              strict_min_version: '115.0',
+              // Notes never leave the browser, so no data is collected.
+              data_collection_permissions: { required: ['none'] },
+            },
           },
         }
       : {}),
