@@ -2,17 +2,25 @@ import { browser, type Browser, type PublicPath } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
 import { captureElement } from '@/lib/capture';
 import { getActionApi, getMenusApi, openDashboard } from '@/lib/compat';
+import { handleEditorMessage } from '@/lib/editor/handler';
+import { EditorSessions } from '@/lib/editor/sessions';
 import {
   isBackgroundMessage,
+  isEditorBackgroundMessage,
   listen,
   sendToTab,
   type BackgroundMessage,
+  type BackgroundResponse,
   type CaptureResult,
   type ContentMessage,
   type ContentResponse,
   type PageState,
 } from '@/lib/messages';
 import { canRunOn, getPageKey } from '@/lib/url';
+// --- Storage writer, reveal, context menu frames ---
+import { revealNoteInBrowser } from '@/lib/compat';
+import { addNoteMenuMessage } from '@/lib/menus';
+import { registerStorageWriter } from '@/lib/storage';
 
 type Tab = Browser.tabs.Tab;
 type Sender = Browser.runtime.MessageSender;
@@ -52,8 +60,18 @@ export default defineBackground({
     browser.tabs.onUpdated.addListener(onTabUpdated);
     browser.tabs.onRemoved.addListener(forgetTab);
     listen(isBackgroundMessage, handleMessage);
+    // --- Note editor sessions ---
+    browser.tabs.onRemoved.addListener((tabId) => void editorSessions().forgetTab(tabId));
+    // --- Storage writer: every context's writes run here, one at a time (see src/lib/storage.ts) ---
+    registerStorageWriter();
   },
 });
+
+// --- Note editor sessions (see src/lib/editor/protocol.ts) -----------------
+
+let sessions: EditorSessions | undefined;
+/** Created on first use: the build imports this module outside a browser. */
+const editorSessions = () => (sessions ??= new EditorSessions());
 
 // ---------------------------------------------------------------------------
 // Install / startup
@@ -124,7 +142,8 @@ async function createMenus(): Promise<void> {
 }
 
 function onMenuClicked(info: Browser.contextMenus.OnClickData, tab?: Tab): void {
-  if (info.menuItemId === MENU_ADD_NOTE) void deliver(tab, { type: 'wm:note-from-context-menu' });
+  // A right-click inside an iframe starts the picker in the top frame (see addNoteMenuMessage).
+  if (info.menuItemId === MENU_ADD_NOTE) void deliver(tab, addNoteMenuMessage(info.frameId));
   else if (info.menuItemId === MENU_TOGGLE_PINS) void deliver(tab, { type: 'wm:set-pins-visible' });
 }
 
@@ -226,7 +245,9 @@ async function injectContentScript(tabId: number): Promise<boolean> {
 // Messages from content scripts / extension pages
 // ---------------------------------------------------------------------------
 
-async function handleMessage(message: BackgroundMessage, sender: Sender): Promise<CaptureResult | { ok: boolean }> {
+async function handleMessage(message: BackgroundMessage, sender: Sender): Promise<BackgroundResponse<BackgroundMessage>> {
+  // --- Note editor sessions ---
+  if (isEditorBackgroundMessage(message)) return handleEditorMessage(editorSessions(), message, sender);
   switch (message.type) {
     case 'wm:capture-element':
       return handleCapture(message, sender);
@@ -235,6 +256,9 @@ async function handleMessage(message: BackgroundMessage, sender: Sender): Promis
     case 'wm:open-dashboard':
       await openDashboard(message.noteId);
       return { ok: true };
+    // --- Storage / reveal ---
+    case 'wm:reveal-note':
+      return handleRevealNote(message, sender);
   }
 }
 
@@ -243,12 +267,36 @@ async function handleCapture(
   sender: Sender,
 ): Promise<CaptureResult> {
   const tab = sender.tab;
-  if (!tab || tab.windowId === undefined) return { error: 'Screenshots can only be taken from a page' };
+  if (!tab || tab.id === undefined || tab.windowId === undefined) return { error: 'Screenshots can only be taken from a page' };
   // The rect is relative to the sending frame, so it only matches the capture for the top frame.
   if (sender.frameId !== undefined && sender.frameId !== 0) return { error: 'Screenshots are only supported in the top frame' };
-  // captureVisibleTab shoots whatever tab is showing, which must be the sender.
+  // captureVisibleTab shoots whatever tab is showing, which must be the sender;
+  // captureElement checks that again around every capture.
   if (!tab.active) return { error: 'The tab must be visible to take a screenshot' };
-  return captureElement(tab.windowId, message.rect, message.devicePixelRatio);
+  return captureElement({ tabId: tab.id, windowId: tab.windowId }, message.rect, message.devicePixelRatio);
+}
+
+// --- Storage / reveal ---------------------------------------------------------
+
+/** Dashboard "Open on page". Only WebMark's own pages may ask: it switches tabs and opens pages. */
+async function handleRevealNote(
+  message: Extract<BackgroundMessage, { type: 'wm:reveal-note' }>,
+  sender: Sender,
+): Promise<{ ok: boolean }> {
+  if (!sender.url?.startsWith(browser.runtime.getURL('/' as PublicPath))) return { ok: false };
+  if (typeof message.pageKey !== 'string' || typeof message.noteId !== 'string') return { ok: false };
+  const ok = await revealNoteInBrowser(
+    { pageKey: message.pageKey, noteId: message.noteId },
+    {
+      windowId: sender.tab?.windowId,
+      injectContentScript: async (tabId) => {
+        const injected = await injectContentScript(tabId);
+        if (!injected) void flashWarningBadge(tabId);
+        return injected;
+      },
+    },
+  );
+  return { ok };
 }
 
 async function handlePageState(state: PageState, sender: Sender): Promise<{ ok: boolean }> {

@@ -4,6 +4,7 @@ import { formatRelativeTime } from '@/lib/format';
 import type { Note } from '@/lib/types';
 import { pinRowPositions, placeTooltip, type Point } from '../geometry';
 import type { LayoutSnapshot } from '../layout';
+import { outsideModal } from '../store';
 import { useAppState, useLayout, useWebmark } from './context';
 
 const TOOLTIP_WIDTH = 260;
@@ -43,9 +44,10 @@ function useGroups(): PinGroup[] {
 }
 
 /** Pins for every visible annotated element; several notes on one element sit in a row. */
-function placePins(groups: PinGroup[], notes: Note[], layout: LayoutSnapshot): PlacedPin[] {
+function placePins(groups: PinGroup[], notes: Note[], layout: LayoutSnapshot, modal: Element | null): PlacedPin[] {
   const placed: PlacedPin[] = [];
   for (const group of groups) {
+    if (outsideModal(modal, group.element)) continue;
     const box = layout.boxes.get(group.element);
     if (!box?.visible) continue;
     const positions = pinRowPositions(box, group.notes.length, layout.viewport);
@@ -66,7 +68,8 @@ export function Pins() {
   const layout = useLayout();
   const groups = useGroups();
 
-  const placed = pinsVisible ? placePins(groups, notes, layout) : [];
+  const modal = useAppState((s) => s.modal);
+  const placed = pinsVisible ? placePins(groups, notes, layout, modal) : [];
   const hovered = placed.find((p) => p.note.id === hoverNoteId);
   const hoveredPinGone = !!hoverNoteId && !hovered;
 

@@ -3,7 +3,7 @@ import { Button } from '@/components/Button';
 import { ConfirmButton } from '@/components/ConfirmButton';
 import { IconCheck, IconDownload, IconRotateCcw, IconTrash, IconX } from '@/components/icons';
 import { showToast } from '@/components/toast';
-import { deleteNote, updateNote } from '@/lib/storage';
+import { deleteNotes, updateNotes } from '@/lib/storage';
 import type { Note, NoteStatus } from '@/lib/types';
 import { exportNotes } from './DataActions';
 
@@ -16,22 +16,23 @@ interface BulkBarProps {
 
 const plural = (n: number) => `${n} note${n === 1 ? '' : 's'}`;
 
-/** Runs one storage call per note and reports how many failed, so none are silently skipped. */
-async function forEachNote(notes: Note[], action: (note: Note) => Promise<unknown>): Promise<number> {
-  const results = await Promise.allSettled(notes.map(action));
-  return results.filter((r) => r.status === 'rejected').length;
-}
-
 export function BulkBar({ selected, shownCount, onSelectAll, onClear }: BulkBarProps) {
   const [busy, setBusy] = useState(false);
   const count = selected.length;
 
-  async function run(label: string, notes: Note[], action: (note: Note) => Promise<unknown>) {
+  /**
+   * One storage call for the whole selection (one write per page), so open
+   * pages and lists update once instead of once per note.
+   */
+  async function run(label: string, notes: Note[], action: (notes: Note[]) => Promise<unknown>): Promise<boolean> {
     setBusy(true);
     try {
-      const failed = await forEachNote(notes, action);
-      if (failed) showToast(`${label}: ${failed} of ${notes.length} failed`, { tone: 'danger' });
-      else showToast(`${label}: ${plural(notes.length)}`, { tone: 'success' });
+      await action(notes);
+      showToast(`${label}: ${plural(notes.length)}`, { tone: 'success' });
+      return true;
+    } catch {
+      showToast(`${label} failed for ${plural(notes.length)}. Try again.`, { tone: 'danger' });
+      return false;
     } finally {
       setBusy(false);
     }
@@ -41,8 +42,13 @@ export function BulkBar({ selected, shownCount, onSelectAll, onClear }: BulkBarP
     run(
       label,
       selected.filter((n) => n.status !== status),
-      (n) => updateNote(n.pageKey, n.id, { status }),
+      (notes) => updateNotes(notes.map((n) => ({ pageKey: n.pageKey, noteId: n.id, patch: { status } }))),
     );
+
+  const remove = async () => {
+    const done = await run('Deleted', selected, (notes) => deleteNotes(notes.map((n) => ({ pageKey: n.pageKey, noteId: n.id }))));
+    if (done) onClear();
+  };
 
   return (
     <div className="wm-allnotes__bulk" role="toolbar" aria-label="Bulk actions">
@@ -74,9 +80,7 @@ export function BulkBar({ selected, shownCount, onSelectAll, onClear }: BulkBarP
         label={`Delete ${count}`}
         confirmLabel={`Delete ${plural(count)}?`}
         disabled={busy}
-        onConfirm={() =>
-          void run('Deleted', selected, (n) => deleteNote(n.pageKey, n.id)).then(onClear)
-        }
+        onConfirm={() => void remove()}
       />
       <Button size="sm" variant="ghost" icon={<IconX />} aria-label="Clear selection" onClick={onClear} disabled={busy} />
     </div>

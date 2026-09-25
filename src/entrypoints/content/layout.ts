@@ -1,6 +1,6 @@
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { readViewport } from './dom';
-import { intersectsViewport, type RectLike, type Size } from './geometry';
+import { intersectsViewport, type Point, type RectLike, type Size } from './geometry';
 
 /*
  * Measures the page elements WebMark draws next to (pinned elements, the
@@ -23,10 +23,21 @@ export interface Box extends RectLike {
 export interface LayoutSnapshot {
   viewport: Size;
   boxes: ReadonlyMap<Element, Box>;
+  /**
+   * Where our fixed layer's top-left corner actually is. (0, 0) unless a
+   * transformed / filtered / contained <html> or <body> became its containing
+   * block and the top layer isn't available to escape that.
+   */
+  origin: Point;
 }
 
 const FALLBACK_INTERVAL_MS = 1000;
 const EPSILON = 0.25;
+const NO_OFFSET: Point = { left: 0, top: 0 };
+
+function isDisplaced(origin: Point): boolean {
+  return Math.abs(origin.left) >= EPSILON || Math.abs(origin.top) >= EPSILON;
+}
 
 const DETACHED: Box = { top: 0, left: 0, width: 0, height: 0, connected: false, visible: false };
 
@@ -55,7 +66,9 @@ function sameBox(a: Box, b: Box): boolean {
 
 export class LayoutTracker {
   private targets = new Set<Element>();
-  private snapshot: LayoutSnapshot = { viewport: readViewport(), boxes: new Map() };
+  private snapshot: LayoutSnapshot = { viewport: readViewport(), boxes: new Map(), origin: NO_OFFSET };
+  /** Our fixed app layer, measured to notice a displaced containing block (see LayoutSnapshot.origin). */
+  private originElement: Element | null = null;
   private readonly listeners = new Set<() => void>();
   private readonly resizeObserver: ResizeObserver;
   private frame = 0;
@@ -88,9 +101,16 @@ export class LayoutTracker {
     this.measure();
   }
 
+  /** Measure where `el` (our position: fixed app layer) really sits, on every pass. */
+  setOriginElement(el: Element): void {
+    this.originElement = el;
+    this.measure();
+  }
+
   /** Request a measurement pass on the next animation frame (coalesced). */
   readonly schedule = (): void => {
-    if (this.frame || this.disposed || !this.targets.size) return;
+    // A displaced layer moves when the page scrolls, even with nothing tracked.
+    if (this.frame || this.disposed || (!this.targets.size && !isDisplaced(this.snapshot.origin))) return;
     // Reading isInvalid also lets an orphaned script (extension reloaded) notice and tear down.
     if (this.ctx.isInvalid) return;
     this.frame = requestAnimationFrame(() => {
@@ -104,9 +124,11 @@ export class LayoutTracker {
     const viewport = readViewport();
     const prev = this.snapshot;
     const boxes = new Map<Element, Box>();
+    const origin = this.measureOrigin(prev.origin);
     let changed =
       viewport.width !== prev.viewport.width ||
       viewport.height !== prev.viewport.height ||
+      origin !== prev.origin ||
       this.targets.size !== prev.boxes.size;
     for (const el of this.targets) {
       const old = prev.boxes.get(el);
@@ -120,8 +142,16 @@ export class LayoutTracker {
       }
     }
     if (!changed) return;
-    this.snapshot = { viewport, boxes };
+    this.snapshot = { viewport, boxes, origin };
     this.listeners.forEach((listener) => listener());
+  }
+
+  /** The previous object when unchanged, so selectors keep returning the same value. */
+  private measureOrigin(prev: Point): Point {
+    if (!this.originElement?.isConnected) return prev;
+    const r = this.originElement.getBoundingClientRect();
+    if (Math.abs(r.left - prev.left) < EPSILON && Math.abs(r.top - prev.top) < EPSILON) return prev;
+    return isDisplaced({ left: r.left, top: r.top }) ? { left: r.left, top: r.top } : NO_OFFSET;
   }
 
   private updateInterval(): void {

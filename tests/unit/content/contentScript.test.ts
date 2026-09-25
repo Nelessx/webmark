@@ -312,19 +312,15 @@ describe('content script', () => {
     await vi.waitFor(() => expect($$('[data-wm-pin]')).toHaveLength(1));
   });
 
-  it('opens the editor for the right-clicked element', async () => {
+  it('ignores a right-click the page dispatched itself: the menu item starts the picker', async () => {
     await startContentScript();
+    // jsdom events are untrusted, like a page's own dispatchEvent(). A real
+    // right-click opens the editor (tests/unit/context-menu.test.ts, e2e).
     const target = document.getElementById('btn-b')!;
     target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, composed: true }));
     expect(await send({ type: 'wm:note-from-context-menu' })).toEqual({ ok: true });
-    await vi.waitFor(() => expect($('[data-wm-editor="create"]')).not.toBeNull());
-    expect(($('[data-wm-label]') as HTMLInputElement).value).toBe('Label for btn-b');
-
-    // Without a remembered element it falls back to the picker.
-    ($('[data-wm-cancel]') as HTMLButtonElement).click();
-    await vi.waitFor(() => expect($('[data-wm-editor]')).toBeNull());
-    expect(await send({ type: 'wm:note-from-context-menu' })).toEqual({ ok: true });
     expect(picker.options).not.toBeNull();
+    expect($('[data-wm-editor]')).toBeNull();
   });
 
   it('re-resolves notes when the DOM changes', async () => {

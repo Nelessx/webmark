@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { canRunOn, displayPageKey, getPageKey, siteOf } from '@/lib/url';
+import {
+  canRunOn,
+  displayPageKey,
+  getPageKey,
+  isPageUrl,
+  isSensitiveParam,
+  redactUrl,
+  REDACTED,
+  sanitizePageKey,
+  siteOf,
+} from '@/lib/url';
 
 describe('getPageKey', () => {
   it('removes trailing slashes but keeps the root path', () => {
@@ -68,6 +78,109 @@ describe('getPageKey', () => {
   it('returns invalid URLs unchanged', () => {
     expect(getPageKey('not a url')).toBe('not a url');
     expect(getPageKey('')).toBe('');
+  });
+
+  it('drops credentials: magic links, OAuth and API tokens, signatures, session ids', () => {
+    expect(getPageKey('https://app.example.com/login?token=abc123')).toBe('https://app.example.com/login');
+    expect(getPageKey('https://example.com/report?id=5&access_token=x&api_key=y&sig=z')).toBe(
+      'https://example.com/report?id=5',
+    );
+    expect(
+      getPageKey(
+        'https://bucket.s3.amazonaws.com/a.png?X-Amz-Algorithm=AWS4&X-Amz-Credential=c&X-Amz-Signature=s&X-Amz-Security-Token=t',
+      ),
+    ).toBe('https://bucket.s3.amazonaws.com/a.png?X-Amz-Algorithm=AWS4');
+    expect(getPageKey('https://shop.example.com/cart;jsessionid=A1B2C3?step=2')).toBe('https://shop.example.com/cart?step=2');
+    expect(getPageKey('https://example.com/p?PHPSESSID=abc&sid=1&SessionId=2&page=3')).toBe('https://example.com/p?page=3');
+  });
+
+  it('drops credentials from hash-route parameters, keeping the route', () => {
+    expect(getPageKey('https://app.example.com/#/reset?token=abc')).toBe('https://app.example.com/#/reset');
+    expect(getPageKey('https://app.example.com/#!/invite?code=7&secret=x')).toBe('https://app.example.com/#!/invite?code=7');
+  });
+
+  it('keeps parameters that name content, and treats credential-free URLs exactly as before', () => {
+    expect(getPageKey('https://example.com/item?id=5&v=2&q=shoes&page=3&key=abc&code=XYZ')).toBe(
+      'https://example.com/item?code=XYZ&id=5&key=abc&page=3&q=shoes&v=2',
+    );
+    // Only a parameter named exactly like a credential goes, not one that merely contains the word.
+    expect(getPageKey('https://example.com/docs?token_type=bearer&tokens=3&signed=1')).toBe(
+      'https://example.com/docs?signed=1&token_type=bearer&tokens=3',
+    );
+    expect(getPageKey('https://app.example.com/#/users?tab=2')).toBe('https://app.example.com/#/users?tab=2');
+    expect(getPageKey('https://example.com/a;v=1/b')).toBe('https://example.com/a;v=1/b');
+  });
+});
+
+describe('isSensitiveParam', () => {
+  it.each(['token', 'TOKEN', 'access_token', 'id-token', 'X-Amz-Signature', 'client_secret', 'jsessionid', 'sid', 'pwd'])(
+    'flags %s',
+    (name) => expect(isSensitiveParam(name)).toBe(true),
+  );
+
+  it.each(['id', 'v', 'q', 'page', 'key', 'code', 'state', 'tab', 'token_type', 'utm_source'])('keeps %s', (name) =>
+    expect(isSensitiveParam(name)).toBe(false),
+  );
+});
+
+describe('redactUrl', () => {
+  it('replaces credential values in the query, keeping the rest byte for byte', () => {
+    expect(redactUrl('https://example.com/p?b=a%20b&token=abc123&x=1')).toBe(`https://example.com/p?b=a%20b&token=${REDACTED}&x=1`);
+    expect(redactUrl('https://example.com/p?Api-Key=k&q=1')).toBe(`https://example.com/p?Api-Key=${REDACTED}&q=1`);
+  });
+
+  it('redacts token-bearing fragments', () => {
+    expect(redactUrl('https://app.example.com/cb#access_token=ya29.a0&token_type=Bearer&expires_in=3599')).toBe(
+      `https://app.example.com/cb#access_token=${REDACTED}&token_type=Bearer&expires_in=3599`,
+    );
+    expect(redactUrl('https://app.example.com/cb#id_token=eyJ.x.y&state=s1')).toBe(
+      `https://app.example.com/cb#id_token=${REDACTED}&state=s1`,
+    );
+    expect(redactUrl('https://app.example.com/#/reset?token=abc')).toBe(`https://app.example.com/#/reset?token=${REDACTED}`);
+  });
+
+  it('redacts a path session id and user:password@', () => {
+    expect(redactUrl('https://shop.example.com/cart;jsessionid=A1B2?x=1')).toBe(
+      `https://shop.example.com/cart;jsessionid=${REDACTED}?x=1`,
+    );
+    expect(redactUrl('https://alice:hunter2@example.com/admin')).toBe('https://example.com/admin');
+  });
+
+  it('returns URLs without credentials unchanged', () => {
+    for (const url of [
+      'https://example.com/docs?page=2#section-3',
+      'https://example.com/s?q=a+b&tag=x&tag=y',
+      'https://app.example.com/#/users?tab=2',
+      'file:///C:/work/mockup.html',
+      'not a url',
+      '',
+    ]) {
+      expect(redactUrl(url)).toBe(url);
+    }
+  });
+});
+
+describe('sanitizePageKey', () => {
+  it('re-keys a page key saved with credentials', () => {
+    expect(sanitizePageKey('https://example.com/report?access_token=x&id=5')).toBe('https://example.com/report?id=5');
+    expect(sanitizePageKey('https://app.example.com/#/reset?token=abc')).toBe('https://app.example.com/#/reset');
+  });
+
+  it('leaves every other page key exactly as it is', () => {
+    for (const key of ['https://example.com/', 'https://example.com/s?q=a+b', 'https://app.example.com/#/users?tab=2', 'not a url']) {
+      expect(sanitizePageKey(key)).toBe(key);
+    }
+  });
+});
+
+describe('isPageUrl', () => {
+  it('accepts http, https and file URLs only', () => {
+    expect(isPageUrl('https://example.com/')).toBe(true);
+    expect(isPageUrl('http://localhost:3000/x')).toBe(true);
+    expect(isPageUrl('file:///C:/a.html')).toBe(true);
+    for (const url of ['javascript:alert(1)', 'data:text/html,x', 'chrome://settings', 'ftp://example.com/', 'nope', '']) {
+      expect(isPageUrl(url)).toBe(false);
+    }
   });
 });
 

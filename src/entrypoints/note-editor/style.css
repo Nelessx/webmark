@@ -1,0 +1,18 @@
+@import '@/assets/theme.css';
+@import '../content/editor.css';
+
+/*
+ * The isolated note editor, framed next to the page element. The frame is
+ * sized to the card, and rounded and shadowed by the content script; the
+ * background is opaque so nothing of the page shows through.
+ */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--wm-surface);
+}
+
+body {
+  overflow-x: hidden;
+}

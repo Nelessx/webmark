@@ -71,6 +71,7 @@ Built with [WXT](https://wxt.dev) (source in `src/`), React 19 and TypeScript. A
 | Entry point | Role |
 |---|---|
 | `content/index.tsx` | Runs on every page: element picker, note editor popover, numbered pins, orphaned-note handling, single-page app navigation. The only handler of `ContentMessage`s. |
+| `note-editor/` | The note form, an extension page the content script frames inside its closed shadow root (`/note-editor.html`), so the page never sees what is typed. See `lib/editor/protocol.ts`. |
 | `background.ts` | Context menu, keyboard shortcuts, screenshot capture and cropping, toolbar badge (open-note count), re-injection into already-open tabs on install. The only responder to `BackgroundMessage`s. |
 | `popup/` | Toolbar popup: quick actions and the current page's notes. |
 | `sidepanel/` | Side panel (Chromium) / sidebar (Firefox): the current page's notes with search, filters and editing. |
@@ -82,10 +83,11 @@ Built with [WXT](https://wxt.dev) (source in `src/`), React 19 and TypeScript. A
 |---|---|
 | `types.ts` | Data model: `Note`, `ElementAnchor`, `NotePatch`, `Settings`, `NOTE_SCHEMA_VERSION`. |
 | `url.ts` | `getPageKey()` normalises a URL into the key notes are stored under (drops tracking params, keeps hash routes like `#/…`); `canRunOn()` says whether a URL can host the content script. |
-| `storage.ts` | All reads and writes to `browser.storage.local`, with a write queue, schema migration and change listeners. |
+| `storage.ts` | All reads and writes of notes, screenshots and settings. Writes run in the background (the single writer), with a write queue, migrations and change listeners. |
 | `messages.ts` | Typed message protocol between the content script, the background and extension pages. |
 | `compat.ts` | Chromium/Firefox differences: action vs browserAction, contextMenus vs menus, side panel vs sidebar, opening the dashboard and revealing a note in a tab. |
 | `constants.ts` | Shadow host tag, `isWebmarkNode()`, `pinNumber()`, default shortcuts. |
+| `editor/` | The isolated note editor: session handshake between content script, background and editor frame (`protocol.ts`, `sessions.ts`), relayed events, unsaved-draft recovery, and saving (`save.ts`). |
 | `anchor/` | `createAnchor()`, `resolveAnchor()`, `buildLabel()`, `describeElement()`: capturing and finding elements. |
 | `format.ts` | Markdown note and report, CSV, relative times, tag parsing. |
 | `export.ts` | JSON export bundle: build, parse and validate, import (merge or replace), download. |
@@ -97,12 +99,14 @@ Design tokens (`--wm-*`, light and dark) live in `src/assets/theme.css`. In-page
 ```
 wm:pages               string[]      page keys that have at least one note
 wm:notes:<pageKey>     Note[]        notes for one page, oldest first
-wm:shot:<noteId>       string        JPEG data URL of the element screenshot
 wm:settings            Settings
 wm:pending-focus       PendingFocus  note to focus after a page is opened from the dashboard
+wm:storage-version     number        layout the background last migrated to
 ```
 
-Notes are grouped per page so a content script reads only its own page. Screenshots live under separate keys so note lists stay small. The extension requests `unlimitedStorage`.
+Notes are grouped per page so a content script reads only its own page. Screenshots (JPEG data URLs) live in IndexedDB in the extension's origin (`webmark` / `screenshots`, keyed by note id), so saving or deleting one isn't broadcast to every open tab; older versions kept them under `wm:shot:<noteId>`, which the background moves over on startup. The extension requests `unlimitedStorage`.
+
+Every context reads storage directly, but all writes run in the background, one at a time: content scripts and extension pages send them as `wm:storage` messages (see `storage.ts`), so two contexts can never overwrite each other's changes. Credentials in page addresses (`?token=`, `#access_token=`, signed-URL signatures, session ids) are dropped from page keys and redacted from saved URLs and exports.
 
 ### Anchoring in brief
 
@@ -130,6 +134,7 @@ A single CSS selector breaks as soon as a page is redeployed with new class hash
 - **Unreachable content:** elements inside closed shadow roots, and apps that draw on a `<canvas>` (e.g. Figma, Google Docs, maps), have no DOM elements to anchor to.
 - **Local only:** notes live in this browser profile. They do not sync across devices or to other people. Use export and import to move them.
 - **Heavy page changes:** if an element's text, attributes and position all change, its note may become orphaned.
+- **Pages that block extension frames:** where a page refuses WebMark's editor frame (e.g. `Cross-Origin-Embedder-Policy: require-corp`), notes are written in an in-page editor that says "Typing here is visible to this page."
 
 ## Roadmap
 

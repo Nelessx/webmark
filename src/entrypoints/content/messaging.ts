@@ -15,6 +15,10 @@ async function handle(controller: Controller, message: ContentMessage): Promise<
       return { found: await controller.focusNote(message.noteId) };
     case 'wm:get-page-state':
       return controller.getPageState();
+    case 'wm:stop-picker':
+      return { ok: controller.cancelPicker() };
+    case 'wm:editor-event':
+      return { ok: controller.onEditorEvent(message.token, message.event) };
   }
 }
 

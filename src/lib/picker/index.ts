@@ -3,9 +3,15 @@ import { createPicker } from './controller';
 export interface PickerOptions {
   /** Element inside WebMark's shadow root to render the highlight box, tooltip and hint bar into. */
   container: HTMLElement;
+  /**
+   * WebMark's shadow root. Seen from the window, events inside a closed root
+   * only show its host, so the picker asks the root what is under the
+   * pointer to let clicks on our own controls (the hint's Cancel) through.
+   */
+  shadowRoot?: ShadowRoot;
   /** Called with the element the user confirmed. The picker has already stopped itself. */
   onPick: (el: Element) => void;
-  /** Called when the user cancels (Esc). The picker has already stopped itself. */
+  /** Called when the user cancels (Esc or the hint's Cancel button). The picker has already stopped itself. */
   onCancel: () => void;
 }
 

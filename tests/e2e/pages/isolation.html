@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quarterly plan</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 0; padding: 24px; font: 15px/1.5 Arial, Helvetica, sans-serif; color: #1d1d27; background: #f4f5f9; }
+      .panel { max-width: 520px; padding: 16px 20px; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }
+      .panel h2 { margin: 0 0 8px; font-size: 18px; }
+      input { font: inherit; }
+    </style>
+    <script>
+      /*
+       * A page that watches everything it can while the user writes a note:
+       * capture and bubble listeners on window and document for keyboard,
+       * input, clipboard, IME and focus events (window.__events), and
+       * document.activeElement polled every few milliseconds
+       * (window.__activeElements, consecutive duplicates dropped).
+       */
+      (function () {
+        'use strict';
+        var types = [
+          'keydown', 'keyup', 'keypress', 'beforeinput', 'input',
+          'paste', 'copy', 'cut',
+          'compositionstart', 'compositionupdate', 'compositionend',
+          'focusin', 'focusout',
+        ];
+        var events = (window.__events = []);
+        types.forEach(function (type) {
+          [window, document].forEach(function (target) {
+            [true, false].forEach(function (capture) {
+              target.addEventListener(type, function (event) {
+                events.push({
+                  type: type,
+                  on: target === window ? 'window' : 'document',
+                  phase: capture ? 'capture' : 'bubble',
+                  target: event.target && event.target.localName ? event.target.localName : String(event.target),
+                  key: event.key || null,
+                  data: event.data || null,
+                });
+              }, capture);
+            });
+          });
+        });
+        var active = (window.__activeElements = []);
+        function sample() {
+          var el = document.activeElement;
+          var name = el ? el.localName : 'null';
+          if (active[active.length - 1] !== name) active.push(name);
+        }
+        sample();
+        setInterval(sample, 4);
+      })();
+    </script>
+  </head>
+  <body>
+    <main class="panel" id="panel">
+      <h2>Quarterly plan</h2>
+      <p id="summary">Ship the onboarding flow before the end of the quarter.</p>
+      <label>Search <input id="search" placeholder="Search" /></label>
+    </main>
+  </body>
+</html>

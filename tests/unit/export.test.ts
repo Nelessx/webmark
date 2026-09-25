@@ -1,6 +1,9 @@
+import 'fake-indexeddb/auto';
+import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { buildExportBundle, downloadFile, importBundle, parseExportBundle, type ExportBundle } from '@/lib/export';
+import { NOTE_LIMITS } from '@/lib/limits';
 import { getAllNotes, getNote, getScreenshot, getSettings, saveNote, saveScreenshot, saveSettings } from '@/lib/storage';
 import { NOTE_SCHEMA_VERSION, type Note } from '@/lib/types';
 
@@ -17,7 +20,8 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     id: `note-${seq}`,
     schemaVersion: NOTE_SCHEMA_VERSION,
     pageKey: PAGE_A,
-    url: `${PAGE_A}?tab=1`,
+    // The full URL can differ from the page key, but must be the same page.
+    url: `${PAGE_A}#revenue`,
     pageTitle: 'Dashboard',
     label: 'Dashboard → Revenue Card',
     body: `Body ${seq}`,
@@ -63,6 +67,7 @@ function rawAnchor(patch: Record<string, unknown> = {}, remove: string[] = []): 
 
 beforeEach(() => {
   fakeBrowser.reset();
+  globalThis.indexedDB = new IDBFactory();
 });
 
 // ---------------------------------------------------------------------------
@@ -107,6 +112,17 @@ describe('buildExportBundle', () => {
     await saveNote(makeNote({ hasScreenshot: true }));
     expect((await buildExportBundle()).screenshots).toEqual({});
   });
+
+  it('leaves credentials out, also of notes saved before they were redacted', async () => {
+    const legacyKey = `${PAGE_A}?token=abc`;
+    const legacy = makeNote({ pageKey: legacyKey, url: `${legacyKey}#access_token=xyz` });
+    const bundle = await buildExportBundle({ notes: [legacy] });
+
+    expect(bundle.notes[0]).toMatchObject({ pageKey: PAGE_A, url: `${PAGE_A}?token=REDACTED#access_token=REDACTED` });
+    expect(JSON.stringify(bundle)).not.toMatch(/abc|xyz/);
+    // ...and such a file imports again.
+    expect(parseExportBundle(JSON.stringify(bundle)).notes[0]?.pageKey).toBe(PAGE_A);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -114,7 +130,7 @@ describe('buildExportBundle', () => {
 describe('parseExportBundle', () => {
   it('round-trips an exported bundle', async () => {
     const a = await saveNote(makeNote({ hasScreenshot: true, status: 'resolved' }));
-    await saveNote(makeNote({ pageKey: PAGE_B, tags: [] }));
+    await saveNote(makeNote({ pageKey: PAGE_B, url: PAGE_B, tags: [] }));
     await saveScreenshot(a.id, SHOT);
 
     const bundle = await buildExportBundle();
@@ -279,6 +295,179 @@ describe('parseExportBundle', () => {
     expect(() => parseExportBundle(bundleJson({ notes: [note, rawNote(), { ...note }] }))).toThrow(
       'Note 3 has the same id as note 1.',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('parseExportBundle: an import file is untrusted', () => {
+  /** Parse a file whose second note is `note`; returns the error message, or '' if it was accepted. */
+  function problemWith(note: Record<string, unknown>): string {
+    try {
+      parseExportBundle(bundleJson({ notes: [rawNote(), note] }));
+      return '';
+    } catch (error) {
+      return (error as Error).message;
+    }
+  }
+
+  const long = (n: number) => 'x'.repeat(n);
+
+  describe('page address', () => {
+    it.each([
+      'javascript:alert(document.cookie)',
+      'data:text/html,<script>alert(1)</script>',
+      'chrome://settings/',
+      'ftp://example.com/file',
+      'moz-extension://abc/options.html',
+      'not a url',
+    ])('refuses a url of %s', (url) => {
+      expect(problemWith(rawNote({ url, pageKey: url }))).toBe(
+        "Note 2 has an invalid 'url' (expected an http, https or file address).",
+      );
+    });
+
+    it('accepts http, https and file pages', () => {
+      for (const url of ['http://localhost:3000/app', 'https://example.com/a?b=1', 'file:///C:/work/mockup.html']) {
+        expect(problemWith(rawNote({ url, pageKey: url.replace(/\/$/, '') }))).toBe('');
+      }
+    });
+
+    it('refuses a page key of another page than the url (a card showing one site while opening another)', () => {
+      expect(problemWith(rawNote({ pageKey: 'https://bank.example/', url: 'https://evil.example/login' }))).toBe(
+        "Note 2 has a 'pageKey' that does not match its 'url'.",
+      );
+      expect(problemWith(rawNote({ pageKey: PAGE_A, url: `${PAGE_A}?report=2` }))).toBe(
+        "Note 2 has a 'pageKey' that does not match its 'url'.",
+      );
+    });
+
+    it('stores the page key derived from the url, normalised', () => {
+      const note = rawNote({ pageKey: 'HTTPS://Example.COM/dashboard/', url: 'https://example.com/dashboard/?utm_source=x#top' });
+      expect(parseExportBundle(bundleJson({ notes: [note] })).notes[0]?.pageKey).toBe(PAGE_A);
+    });
+
+    it('accepts page keys saved before credentials were dropped from them', () => {
+      const note = rawNote({ pageKey: `${PAGE_A}?id=5&token=abc`, url: `${PAGE_A}?id=5&token=abc` });
+      expect(parseExportBundle(bundleJson({ notes: [note] })).notes[0]?.pageKey).toBe(`${PAGE_A}?id=5`);
+    });
+  });
+
+  describe('lengths', () => {
+    it.each([
+      ['id', rawNote({ id: long(NOTE_LIMITS.id + 1) }), "'id' (expected at most 200 characters)"],
+      ['url', rawNote({ url: `${PAGE_A}#${long(NOTE_LIMITS.url)}` }), "'url' (expected at most 16384 characters)"],
+      ['pageTitle', rawNote({ pageTitle: long(NOTE_LIMITS.pageTitle + 1) }), "'pageTitle' (expected at most 2000 characters)"],
+      ['label', rawNote({ label: long(NOTE_LIMITS.label + 1) }), "'label' (expected at most 1000 characters)"],
+      ['body', rawNote({ body: long(NOTE_LIMITS.body + 1) }), "'body' (expected at most 100000 characters)"],
+      ['author', rawNote({ author: long(NOTE_LIMITS.author + 1) }), "'author' (expected at most 200 characters)"],
+      ['tags (count)', rawNote({ tags: Array.from({ length: 51 }, (_, i) => `t${i}`) }), "'tags' (expected at most 50 items)"],
+      ['tags (length)', rawNote({ tags: [long(101)] }), "'tags' (expected items of at most 100 characters)"],
+      ['selector', rawNote({ anchor: rawAnchor({ selector: `div${'.a'.repeat(2_000)}` }) }), "'anchor.selector' (expected at most 4000 characters)"],
+      ['xpath', rawNote({ anchor: rawAnchor({ xpath: '/html/body'.padEnd(4_001, '/div') }) }), "'anchor.xpath' (expected at most 4000 characters)"],
+      ['text', rawNote({ anchor: rawAnchor({ text: long(1_001) }) }), "'anchor.text' (expected at most 1000 characters)"],
+      ['tagName', rawNote({ anchor: rawAnchor({ tagName: long(101) }) }), "'anchor.tagName' (expected at most 100 characters)"],
+      ['element id', rawNote({ anchor: rawAnchor({ id: long(201) }) }), "'anchor.id' (expected at most 200 characters)"],
+      ['classes', rawNote({ anchor: rawAnchor({ classes: Array.from({ length: 51 }, (_, i) => `c${i}`) }) }), "'anchor.classes' (expected at most 50 items)"],
+      ['ancestors', rawNote({ anchor: rawAnchor({ ancestorTags: [long(101)] }) }), "'anchor.ancestorTags' (expected items of at most 100 characters)"],
+      [
+        'attribute values',
+        rawNote({ anchor: rawAnchor({ attributes: { title: long(1_001) } }) }),
+        "'anchor.attributes' (expected names of at most 100 characters and values of at most 1000 characters)",
+      ],
+      [
+        'attribute count',
+        rawNote({ anchor: rawAnchor({ attributes: Object.fromEntries(Array.from({ length: 51 }, (_, i) => [`a${i}`, 'x'])) }) }),
+        "'anchor.attributes' (expected at most 50 entries)",
+      ],
+    ])('caps %s', (_field, note, message) => {
+      expect(problemWith(note)).toBe(`Note 2 has an invalid ${message}.`);
+    });
+
+    it('accepts values at the limits', () => {
+      const note = rawNote({
+        label: long(NOTE_LIMITS.label),
+        body: long(NOTE_LIMITS.body),
+        tags: Array.from({ length: NOTE_LIMITS.tags }, (_, i) => `t${i}`),
+        anchor: rawAnchor({ text: long(NOTE_LIMITS.text), attributes: { title: long(NOTE_LIMITS.attributeValue) } }),
+      });
+      expect(problemWith(note)).toBe('');
+    });
+  });
+
+  describe('XPath: only the absolute child paths WebMark builds', () => {
+    it.each([
+      '/html',
+      '/html/body/div[2]/main/section[1]/div[3]',
+      '/html/body/acme-rating',
+      '/html/body/div/*[2]/*[1]',
+      '/div[2]/span',
+      '/html/body/my_el.v2[10]',
+    ])('accepts %s', (xpath) => {
+      expect(problemWith(rawNote({ anchor: rawAnchor({ xpath }) }))).toBe('');
+    });
+
+    it.each([
+      '//div',
+      '/html/body//a',
+      "/html/body/div[@id='x']",
+      '/html/body/div[last()]',
+      '/html/body/div[0]',
+      '/html/body/../div',
+      '/html/body/div/text()',
+      'count(//*)',
+      '/descendant::*[contains(., "x")]',
+      'html/body',
+      '/html/body/',
+      '',
+    ])('refuses %s', (xpath) => {
+      expect(problemWith(rawNote({ anchor: rawAnchor({ xpath }) }))).toBe(
+        "Note 2 has an invalid 'anchor.xpath' (expected an absolute XPath like /html/body/div[2]).",
+      );
+    });
+  });
+
+  describe('selector: only the shapes WebMark builds', () => {
+    it.each([
+      '#revenue',
+      'div.card.primary',
+      'button[data-testid="save"]',
+      'input[name="email"]',
+      '[aria-label="Save, then close: has(it)"]',
+      '#main > ul > li:nth-of-type(3)',
+      '#app div.card > p',
+      'div.md\\:flex.w-1\\/2',
+      '#\\31 23',
+      'span.é-card',
+      'a[href="/docs?x=\\"q\\""]',
+      '',
+    ])('accepts %s', (selector) => {
+      expect(problemWith(rawNote({ anchor: rawAnchor({ selector }) }))).toBe('');
+    });
+
+    it.each([
+      'div:has(div:has(div))',
+      'div:not(.a)',
+      ':is(a, b)',
+      'a, b, c',
+      '*',
+      'div ~ p',
+      'h1 + p',
+      'a[href*="x"]',
+      'li:nth-child(2)',
+      'div::before',
+      "div[title='x']",
+    ])('refuses %s', (selector) => {
+      expect(problemWith(rawNote({ anchor: rawAnchor({ selector }) }))).toBe(
+        "Note 2 has an invalid 'anchor.selector' (expected a CSS selector like WebMark creates).",
+      );
+    });
+  });
+
+  it('never imports a refused file, even partly', async () => {
+    const json = bundleJson({ notes: [rawNote({ id: 'fine' }), rawNote({ url: 'javascript:alert(1)' })] });
+    expect(() => parseExportBundle(json)).toThrow("Note 2 has an invalid 'url'");
+    expect(await getAllNotes()).toEqual([]);
   });
 });
 

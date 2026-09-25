@@ -112,6 +112,29 @@ export const PICKER_CSS = `
   top: 16px;
   bottom: auto;
 }
+.wm-picker-hint--faded {
+  opacity: 0.35;
+}
+.wm-picker .wm-picker-cancel {
+  flex: none;
+  margin: -3px -8px -3px 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--wm-border-strong, #cfcfdc);
+  border-radius: 999px;
+  background: var(--wm-surface-2, #f1f1f6);
+  color: var(--wm-text, #1b1b24);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer !important;
+  pointer-events: auto;
+}
+.wm-picker .wm-picker-cancel:hover {
+  background: var(--wm-surface, #ffffff);
+}
+.wm-picker .wm-picker-cancel:focus-visible {
+  outline: 2px solid var(--wm-accent, #5b4cf5);
+  outline-offset: 1px;
+}
 .wm-picker-hint-dot {
   flex: none;
   width: 8px;
@@ -119,6 +142,13 @@ export const PICKER_CSS = `
   border-radius: 50%;
   background: var(--wm-accent, #5b4cf5);
   box-shadow: 0 0 0 3px var(--wm-accent-soft, rgba(91, 76, 245, 0.12));
+}
+.wm-picker-hint-keys {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 .wm-picker-hint-sep {
   color: var(--wm-text-muted, #6b6b7b);

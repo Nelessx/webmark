@@ -141,7 +141,7 @@ test.describe('extension pages', () => {
     await page.bringToFront();
     const plain = await wm.createNote(d.cardValue('Orders'), 'No screenshot please', { up: 1 });
     expect(plain.hasScreenshot).toBe(false);
-    expect(await ext.storage(`wm:shot:${plain.id}`)).toEqual({});
+    expect(await ext.screenshot(plain.id)).toBeUndefined();
 
     // The welcome screen.
     await options.goto(ext.url('options.html#welcome'));
@@ -304,13 +304,13 @@ test.describe('extension pages', () => {
     await expect(options.getByText('No notes yet')).toBeVisible();
     await expect.poll(async () => (await ext.notes(page)).length).toBe(0);
     await expect(wm.pins).toHaveCount(0);
-    expect(await ext.storage(`wm:shot:${revenue.id}`)).toEqual({});
+    expect(await ext.screenshot(revenue.id)).toBeUndefined();
 
     await options.locator('input[type="file"]').setInputFiles(backup);
     await expect(options.getByText('Imported: 2 added, 0 updated, 0 unchanged')).toBeVisible();
     await expect(cards).toHaveCount(2);
     expect(await ext.notes(page)).toEqual(original);
-    expect((await ext.storage(`wm:shot:${revenue.id}`))[`wm:shot:${revenue.id}`]).toMatch(/^data:image\/jpeg;base64,/);
+    expect(await ext.screenshot(revenue.id)).toMatch(/^data:image\/jpeg;base64,/);
     // The open page picks the restored notes up.
     await wm.expectPinOn(revenue.id, d.card('Revenue'));
     await wm.expectPinOn(users.id, d.card('Users'));

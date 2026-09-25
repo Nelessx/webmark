@@ -1,4 +1,5 @@
 import { browser, type Browser } from 'wxt/browser';
+import type { DraftState, EditorEvent, EditorFrameEvent, EditorHelloResponse, EditorRequest } from './editor/protocol';
 
 /*
  * Typed message protocol between extension contexts.
@@ -46,7 +47,12 @@ export type ContentMessage =
   | { type: 'wm:set-pins-visible'; visible?: boolean }
   /** Scroll to a note's element, flash it and open the note. */
   | { type: 'wm:focus-note'; noteId: string }
-  | { type: 'wm:get-page-state' };
+  | { type: 'wm:get-page-state' }
+  // --- Picker control / note editor sessions (see src/lib/editor/protocol.ts) ---
+  /** Leave element-picking mode without picking (e.g. Esc pressed in the side panel). */
+  | { type: 'wm:stop-picker' }
+  /** An event of this tab's isolated editor frame, relayed by the background. */
+  | { type: 'wm:editor-event'; token: string; event: EditorEvent };
 
 export type ContentResponse<M extends ContentMessage> = M extends { type: 'wm:get-page-state' }
   ? PageState
@@ -67,7 +73,29 @@ export type BackgroundMessage =
   /** Content script state changed (notes loaded/resolved/edited). Used for the toolbar badge. */
   | { type: 'wm:page-state-changed'; state: PageState }
   /** Open the dashboard (options page), optionally highlighting one note. */
-  | { type: 'wm:open-dashboard'; noteId?: string };
+  | { type: 'wm:open-dashboard'; noteId?: string }
+  | EditorBackgroundMessage
+  // --- Storage / reveal (writes themselves travel as `wm:storage` requests, see storage.ts) ---
+  /** Dashboard "Open on page": show the note in a tab that has its page (injecting WebMark if needed), or open the page. */
+  | { type: 'wm:reveal-note'; pageKey: string; noteId: string };
+
+// --- Note editor sessions (see src/lib/editor/protocol.ts) ------------------
+
+export type EditorBackgroundMessage =
+  /** Content script: register a session for the editor frame it is about to create. */
+  | { type: 'wm:editor-open'; token: string; request: EditorRequest }
+  /** Editor frame: claim the session named by the token in its URL. */
+  | { type: 'wm:editor-hello'; token: string }
+  /** Editor frame: an event for the content script of its tab. */
+  | { type: 'wm:editor-emit'; token: string; event: EditorFrameEvent }
+  /** Editor frame (or in-page fallback editor): unsaved values, or null once there are none. */
+  | { type: 'wm:editor-draft'; token: string; draft: DraftState | null }
+  /** Content script: the frame never answered, or broke; answers with what it last mirrored. */
+  | { type: 'wm:editor-fallback'; token: string }
+  /** Content script or editor frame: the editor closed. */
+  | { type: 'wm:editor-close'; token: string }
+  /** Content script, on start: a draft this tab left unsaved on the page. */
+  | { type: 'wm:editor-recover'; pageKey: string };
 
 export interface CaptureResult {
   /** JPEG data URL of the cropped element, if capture succeeded. */
@@ -77,7 +105,13 @@ export interface CaptureResult {
 
 export type BackgroundResponse<M extends BackgroundMessage> = M extends { type: 'wm:capture-element' }
   ? CaptureResult
-  : { ok: boolean };
+  : M extends { type: 'wm:editor-hello' }
+    ? EditorHelloResponse
+    : M extends { type: 'wm:editor-recover' }
+      ? { request?: EditorRequest }
+      : M extends { type: 'wm:editor-fallback' }
+        ? { ok: boolean; draft?: DraftState }
+        : { ok: boolean };
 
 // ---------------------------------------------------------------------------
 // Guards
@@ -89,12 +123,29 @@ const CONTENT_TYPES = new Set<ContentMessage['type']>([
   'wm:set-pins-visible',
   'wm:focus-note',
   'wm:get-page-state',
+  // --- Picker control / note editor sessions ---
+  'wm:stop-picker',
+  'wm:editor-event',
+]);
+
+// --- Note editor sessions ---
+const EDITOR_TYPES = new Set<EditorBackgroundMessage['type']>([
+  'wm:editor-open',
+  'wm:editor-hello',
+  'wm:editor-emit',
+  'wm:editor-draft',
+  'wm:editor-fallback',
+  'wm:editor-close',
+  'wm:editor-recover',
 ]);
 
 const BACKGROUND_TYPES = new Set<BackgroundMessage['type']>([
   'wm:capture-element',
   'wm:page-state-changed',
   'wm:open-dashboard',
+  ...EDITOR_TYPES,
+  // --- Storage / reveal ---
+  'wm:reveal-note',
 ]);
 
 function hasType(value: unknown): value is { type: string } {
@@ -107,6 +158,11 @@ export function isContentMessage(value: unknown): value is ContentMessage {
 
 export function isBackgroundMessage(value: unknown): value is BackgroundMessage {
   return hasType(value) && BACKGROUND_TYPES.has(value.type as BackgroundMessage['type']);
+}
+
+// --- Note editor sessions ---
+export function isEditorBackgroundMessage(value: unknown): value is EditorBackgroundMessage {
+  return hasType(value) && EDITOR_TYPES.has(value.type as EditorBackgroundMessage['type']);
 }
 
 // ---------------------------------------------------------------------------

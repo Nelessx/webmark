@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Transformed layout</title>
+    <link rel="icon" href="data:," />
+    <style>
+      /*
+       * A transform on <body> (as page-transition and zoom libraries add)
+       * makes it the containing block of every position: fixed descendant,
+       * WebMark's host included: fixed UI would scroll with the page and sit
+       * offset by the body's margin. Some rules also try to restyle WebMark
+       * through the custom properties it uses.
+       */
+      body {
+        margin: 40px 0 0 60px;
+        padding: 24px;
+        font: 15px/1.5 Arial, Helvetica, sans-serif;
+        color: #1d1d27;
+        background: #f4f5f9;
+        transform: translateZ(0);
+        filter: saturate(1);
+      }
+      .tile { width: 360px; margin: 0 0 24px; padding: 16px 20px; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }
+      .tile h3 { margin: 0 0 6px; }
+      .spacer { height: 600px; }
+      webmark-ui {
+        --wm-pin-open: rgb(255, 0, 0) !important;
+        --wm-surface: rgb(0, 255, 0) !important;
+        --wm-font: 'Comic Sans MS', cursive !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="spacer"></div>
+    <section class="tile" id="alpha"><h3>Alpha</h3><p>First tile.</p></section>
+    <section class="tile" id="beta"><h3>Beta</h3><p>Second tile.</p></section>
+    <div class="spacer"></div>
+  </body>
+</html>

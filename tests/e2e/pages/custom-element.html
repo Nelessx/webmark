@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Custom element trap</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 0; padding: 24px; font: 15px/1.5 Arial, Helvetica, sans-serif; color: #1d1d27; background: #f4f5f9; }
+      .panel { max-width: 520px; padding: 16px 20px; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }
+    </style>
+    <script>
+      /*
+       * Defines <webmark-ui> before WebMark mounts. If WebMark created its host
+       * under that name, this constructor would run on it and keep its
+       * ElementInternals, whose shadowRoot exposes even a closed shadow root.
+       * window.__internals collects them; window.__constructed counts runs.
+       */
+      window.__internals = [];
+      window.__constructed = 0;
+      customElements.define(
+        'webmark-ui',
+        class extends HTMLElement {
+          constructor() {
+            super();
+            window.__constructed++;
+            window.__internals.push(this.attachInternals());
+          }
+        },
+      );
+      /** Everything the page can read through the internals it collected. */
+      window.__stolen = function () {
+        return window.__internals
+          .map(function (internals) {
+            return internals.shadowRoot ? internals.shadowRoot.textContent + '|' + internals.shadowRoot.innerHTML.length : '';
+          })
+          .join('');
+      };
+    </script>
+  </head>
+  <body>
+    <main class="panel">
+      <h2>Release checklist</h2>
+      <p id="item">Update the changelog before tagging.</p>
+    </main>
+  </body>
+</html>

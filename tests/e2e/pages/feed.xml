@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An XML document: WebMark's content script only runs in HTML documents, so this tab never has one. -->
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Acme release notes</title>
+  <entry>
+    <title>Dashboard 2.0</title>
+  </entry>
+</feed>

@@ -521,3 +521,38 @@ describe('notesToCsv', () => {
     expect(rows[2]?.[1]).toBe('Local files');
   });
 });
+
+describe('exports never show credentials from a saved URL', () => {
+  // Notes saved before URLs were redacted on save can still carry them.
+  const withToken = makeNote({
+    pageKey: 'https://app.example.com/report?id=7&token=s3cr3t',
+    url: 'https://app.example.com/report?id=7&token=s3cr3t#access_token=ya29.tok',
+    pageTitle: '',
+  });
+
+  it('copy as Markdown', () => {
+    const md = noteToMarkdown(withToken);
+    expect(md).not.toMatch(/s3cr3t|ya29/);
+    expect(md).toContain('https://app.example.com/report?id=7&token=REDACTED#access_token=REDACTED');
+    expect(md).toContain('app.example.com/report?id=7');
+  });
+
+  it('Markdown report', () => {
+    const report = notesToMarkdownReport([withToken]);
+    expect(report).not.toMatch(/s3cr3t|ya29/);
+    expect(report).toContain('<https://app.example.com/report?id=7&token=REDACTED#access_token=REDACTED>');
+    expect(report).toContain('### app.example.com/report?id=7');
+  });
+
+  it('CSV', () => {
+    const csv = notesToCsv([withToken]);
+    expect(csv).not.toMatch(/s3cr3t|ya29/);
+    expect(parseCsv(csv)[1]?.[3]).toBe('https://app.example.com/report?id=7&token=REDACTED#access_token=REDACTED');
+  });
+
+  it('leaves URLs without credentials exactly as saved', () => {
+    const plain = makeNote({ url: 'https://example.com/dashboard?q=a%20b#section' });
+    expect(parseCsv(notesToCsv([plain]))[1]?.[3]).toBe('https://example.com/dashboard?q=a%20b#section');
+    expect(noteToMarkdown(plain)).toContain('](https://example.com/dashboard?q=a%20b#section)');
+  });
+});

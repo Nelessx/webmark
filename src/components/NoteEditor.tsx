@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { parseTags } from '@/lib/format';
+import { NOTE_LIMITS } from '@/lib/limits';
 import type { Note, NotePatch } from '@/lib/types';
 import { Button } from './Button';
 import { IconCheck } from './icons';
@@ -52,8 +53,12 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
     el.style.height = `${el.scrollHeight + 2}px`;
   }, [body]);
 
+  // Like the editor on the page: a note always has text. (An emptied note used
+  // to be saved here, and the page's editor then refused every change to it.)
+  const canSave = body.trim() !== '';
+
   const save = async () => {
-    if (saving) return;
+    if (saving || !canSave) return;
     const patch: NotePatch = {};
     const nextLabel = label.trim() || initial.label;
     if (nextLabel !== initial.label) patch.label = nextLabel;
@@ -106,6 +111,7 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
           onChange={(e) => setLabel(e.target.value)}
           placeholder="Dashboard → Revenue card"
           autoComplete="off"
+          maxLength={NOTE_LIMITS.label}
         />
       </div>
       <div className="wm-field">
@@ -120,6 +126,8 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
           rows={3}
           onChange={(e) => setBody(e.target.value)}
           placeholder="What should change?"
+          maxLength={NOTE_LIMITS.body}
+          aria-invalid={!canSave || undefined}
         />
       </div>
       <div className="wm-field">
@@ -146,7 +154,14 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="primary" size="sm" type="submit" icon={<IconCheck size={14} />} disabled={saving}>
+        <Button
+          variant="primary"
+          size="sm"
+          type="submit"
+          icon={<IconCheck size={14} />}
+          disabled={saving || !canSave}
+          title={canSave ? undefined : 'Write a note first'}
+        >
           Save
         </Button>
       </div>

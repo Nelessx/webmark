@@ -1,7 +1,7 @@
 import { browser, type Browser } from 'wxt/browser';
-import { sendToTab } from './messages';
-import { setPendingFocus } from './storage';
-import { getPageKey } from './url';
+import { sendToBackground, sendToTab } from './messages';
+import { getNote, setPendingFocus, takePendingFocus, type NoteRef } from './storage';
+import { getPageKey, isPageUrl } from './url';
 import type { Note } from './types';
 
 /*
@@ -9,6 +9,7 @@ import type { Note } from './types';
  */
 
 type ActionApi = typeof browser.action;
+type Tab = Browser.tabs.Tab;
 
 /** `browser.action` on MV3, `browser.browserAction` on Firefox MV2. */
 export function getActionApi(): ActionApi {
@@ -20,7 +21,7 @@ export function getMenusApi(): typeof browser.contextMenus {
   return (browser.contextMenus ?? (browser as unknown as { menus: typeof browser.contextMenus }).menus) as typeof browser.contextMenus;
 }
 
-export async function getActiveTab(): Promise<Browser.tabs.Tab | undefined> {
+export async function getActiveTab(): Promise<Tab | undefined> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   return tab;
 }
@@ -50,29 +51,53 @@ export async function openDashboard(noteId?: string): Promise<void> {
 }
 
 /**
- * Take the user to a note: if an open tab already shows the note's page, focus
- * that tab and ask its content script to reveal the note; otherwise open the
- * page in a new tab and let the content script pick up the pending focus on load.
+ * Take the user to a note (dashboard "Open on page"). The background does the
+ * work, since only it can inject a content script into a tab that has none.
  */
 export async function revealNote(note: Note): Promise<void> {
-  const tabs = await browser.tabs.query({});
-  const active = await getActiveTab();
-  const candidates = tabs
-    .filter((t) => t.id !== undefined && t.url && getPageKey(t.url) === note.pageKey)
-    // Prefer the active tab, then tabs in the current window.
-    .sort((a, b) => Number(b.id === active?.id) - Number(a.id === active?.id) || Number(b.windowId === active?.windowId) - Number(a.windowId === active?.windowId));
+  const res = await sendToBackground({ type: 'wm:reveal-note', pageKey: note.pageKey, noteId: note.id });
+  if (!res?.ok) throw new Error("Couldn't show the note on its page");
+}
 
-  const tab = candidates[0];
+export interface RevealOptions {
+  /** Window the request came from: its tabs are preferred. */
+  windowId?: number;
+  /** Inject WebMark's content script into a tab; false where the page doesn't allow it. */
+  injectContentScript(tabId: number): Promise<boolean>;
+}
+
+/**
+ * Background side of revealNote(). If a tab already shows the note's page,
+ * focus it and have its content script reveal the note; a tab without one
+ * (opened before install or update) gets one injected, which picks the note
+ * up like a fresh page load. The user's tab is never reloaded. Only when no
+ * tab shows the page does it open in a new one. Resolves false when the note
+ * can't be shown.
+ */
+export async function revealNoteInBrowser(ref: NoteRef, options: RevealOptions): Promise<boolean> {
+  const note = await getNote(ref.pageKey, ref.noteId);
+  if (!note) return false;
+
+  const tab = await findTabShowing(note.pageKey, options.windowId);
   if (tab?.id !== undefined) {
     await browser.tabs.update(tab.id, { active: true });
     if (tab.windowId !== undefined) await browser.windows.update(tab.windowId, { focused: true });
-    const res = await sendToTab(tab.id, { type: 'wm:focus-note', noteId: note.id });
-    if (res) return;
-    // No content script in that tab yet: fall back to reloading it with a pending focus.
+    if (await sendToTab(tab.id, { type: 'wm:focus-note', noteId: note.id })) return true;
     await setPendingFocus(note.pageKey, note.id);
-    await browser.tabs.reload(tab.id);
-    return;
+    if (await options.injectContentScript(tab.id)) return true;
+    await takePendingFocus(note.pageKey);
+    return false;
   }
+
+  // Saved URLs come from pages WebMark ran on; never open anything else.
+  if (!isPageUrl(note.url)) return false;
   await setPendingFocus(note.pageKey, note.id);
-  await browser.tabs.create({ url: note.url });
+  await browser.tabs.create({ url: note.url, ...(options.windowId !== undefined ? { windowId: options.windowId } : {}) });
+  return true;
+}
+
+/** A tab showing `pageKey`, preferring one in `windowId`. */
+async function findTabShowing(pageKey: string, windowId: number | undefined): Promise<Tab | undefined> {
+  const tabs = (await browser.tabs.query({})).filter((t) => t.id !== undefined && t.url && getPageKey(t.url) === pageKey);
+  return tabs.find((t) => t.windowId === windowId) ?? tabs[0];
 }

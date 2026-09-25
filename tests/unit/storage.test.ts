@@ -1,3 +1,5 @@
+import 'fake-indexeddb/auto';
+import { IDBFactory } from 'fake-indexeddb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import {
@@ -5,11 +7,13 @@ import {
   createNoteId,
   deleteAllNotes,
   deleteNote,
+  deleteNotes,
   getAllNotes,
   getNote,
   getNotesForPage,
   getPageKeys,
   getScreenshot,
+  getScreenshots,
   getSettings,
   onNotesChanged,
   onSettingsChanged,
@@ -19,6 +23,7 @@ import {
   setPendingFocus,
   takePendingFocus,
   updateNote,
+  updateNotes,
   type NotesChange,
 } from '@/lib/storage';
 import { DEFAULT_SETTINGS, NOTE_SCHEMA_VERSION, type Note } from '@/lib/types';
@@ -66,7 +71,22 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => {
   fakeBrowser.reset();
+  // A fresh, empty IndexedDB (screenshots) for every test.
+  globalThis.indexedDB = new IDBFactory();
 });
+
+/** Every storage.local key, e.g. to check that no screenshot is kept there. */
+const storedKeys = async () => Object.keys(await fakeBrowser.storage.local.get(null));
+
+/** Which note pages each storage.onChanged event carried, one entry per event. */
+function recordNotePageEvents(): string[][] {
+  const events: string[][] = [];
+  fakeBrowser.storage.onChanged.addListener((changes) => {
+    const pages = Object.keys(changes).filter((key) => key.startsWith('wm:notes:'));
+    if (pages.length) events.push(pages.map((key) => key.slice('wm:notes:'.length)).sort());
+  });
+  return events;
+}
 
 describe('notes per page', () => {
   it('returns a page\'s notes oldest first regardless of save order', async () => {
@@ -464,5 +484,174 @@ describe('concurrent writes from one context', () => {
     expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled']);
     expect((await getNotesForPage(PAGE_A)).map((n) => n.id)).toEqual(['b']);
     set.mockRestore();
+  });
+});
+
+describe('screenshots live in IndexedDB, not storage.local', () => {
+  const SHOT = 'data:image/jpeg;base64,/9j/AAAA';
+
+  it('stores and reads a screenshot without a storage.local key or change event', async () => {
+    const changes = vi.fn();
+    fakeBrowser.storage.onChanged.addListener(changes);
+
+    await saveScreenshot('n1', SHOT);
+
+    expect(await getScreenshot('n1')).toBe(SHOT);
+    expect(await storedKeys()).toEqual([]);
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('deletes screenshots with their notes, one or many', async () => {
+    await saveNote(makeNote({ id: 'a', hasScreenshot: true }));
+    await saveNote(makeNote({ id: 'b', hasScreenshot: true, pageKey: PAGE_B }));
+    await saveNote(makeNote({ id: 'c', hasScreenshot: true }));
+    await Promise.all(['a', 'b', 'c'].map((id) => saveScreenshot(id, `${SHOT}${id}`)));
+
+    await deleteNote(PAGE_A, 'a');
+    expect(await getScreenshot('a')).toBeUndefined();
+    await deleteNotes([
+      { pageKey: PAGE_B, noteId: 'b' },
+      { pageKey: PAGE_A, noteId: 'c' },
+    ]);
+    expect(await getScreenshots(['a', 'b', 'c'])).toEqual({});
+  });
+
+  it('deleteAllNotes clears every screenshot', async () => {
+    await saveNote(makeNote({ id: 'a', hasScreenshot: true }));
+    await saveScreenshot('a', SHOT);
+    await saveScreenshot('orphan', SHOT);
+
+    await deleteAllNotes();
+
+    expect(await getScreenshots(['a', 'orphan'])).toEqual({});
+  });
+
+  it('reads several screenshots at once, leaving out notes without one', async () => {
+    await saveScreenshot('a', `${SHOT}a`);
+    await saveScreenshot('b', `${SHOT}b`);
+    expect(await getScreenshots(['a', 'missing', 'b'])).toEqual({ a: `${SHOT}a`, b: `${SHOT}b` });
+  });
+
+  it('still reads a screenshot stored under the old wm:shot: key until it is migrated', async () => {
+    await fakeBrowser.storage.local.set({ 'wm:shot:old': SHOT });
+    expect(await getScreenshot('old')).toBe(SHOT);
+    await deleteNote(PAGE_A, 'old');
+    expect(await storedKeys()).toEqual([]);
+  });
+
+  it('imports screenshots into IndexedDB', async () => {
+    await bulkPutNotes([makeNote({ id: 'imported', hasScreenshot: true })], { imported: SHOT });
+    expect(await getScreenshot('imported')).toBe(SHOT);
+    expect((await storedKeys()).filter((key) => key.startsWith('wm:shot:'))).toEqual([]);
+  });
+});
+
+describe('batch writes', () => {
+  it('updateNotes applies every change with one write per page and returns the notes in order', async () => {
+    await saveNote(makeNote({ id: 'a1', createdAt: 1 }));
+    await saveNote(makeNote({ id: 'a2', createdAt: 2 }));
+    await saveNote(makeNote({ id: 'b1', pageKey: PAGE_B, createdAt: 3 }));
+    const set = vi.spyOn(fakeBrowser.storage.local, 'set');
+    const events = recordNotePageEvents();
+    vi.spyOn(Date, 'now').mockReturnValue(9_000);
+
+    const results = await updateNotes([
+      { pageKey: PAGE_B, noteId: 'b1', patch: { status: 'resolved' } },
+      { pageKey: PAGE_A, noteId: 'a1', patch: { status: 'resolved', tags: undefined } },
+      { pageKey: PAGE_A, noteId: 'gone', patch: { status: 'resolved' } },
+      { pageKey: PAGE_A, noteId: 'a2', patch: { body: 'edited' } },
+    ]);
+
+    expect(results.map((n) => n?.id)).toEqual(['b1', 'a1', undefined, 'a2']);
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([[PAGE_A, PAGE_B].sort()]);
+    expect(await getNote(PAGE_A, 'a1')).toMatchObject({ status: 'resolved', tags: [], updatedAt: 9_000 });
+    expect(await getNote(PAGE_A, 'a2')).toMatchObject({ status: 'open', body: 'edited' });
+    expect((await getNote(PAGE_B, 'b1'))?.status).toBe('resolved');
+  });
+
+  it('updateNotes with nothing to change does not write', async () => {
+    const set = vi.spyOn(fakeBrowser.storage.local, 'set');
+    expect(await updateNotes([])).toEqual([]);
+    expect(await updateNotes([{ pageKey: PAGE_A, noteId: 'missing', patch: { body: 'x' } }])).toEqual([undefined]);
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it('deleteNotes removes notes across pages with one change per page and keeps the index right', async () => {
+    await saveNote(makeNote({ id: 'a1' }));
+    await saveNote(makeNote({ id: 'a2' }));
+    await saveNote(makeNote({ id: 'a3' }));
+    await saveNote(makeNote({ id: 'b1', pageKey: PAGE_B }));
+    await saveNote(makeNote({ id: 'c1', pageKey: PAGE_C }));
+    const events = recordNotePageEvents();
+
+    await deleteNotes([
+      { pageKey: PAGE_A, noteId: 'a1' },
+      { pageKey: PAGE_B, noteId: 'b1' },
+      { pageKey: PAGE_A, noteId: 'a3' },
+      { pageKey: PAGE_C, noteId: 'not-there' },
+    ]);
+
+    expect(events.flat().sort()).toEqual([PAGE_A, PAGE_B].sort());
+    expect((await getNotesForPage(PAGE_A)).map((n) => n.id)).toEqual(['a2']);
+    expect(await getNotesForPage(PAGE_B)).toEqual([]);
+    expect((await getPageKeys()).sort()).toEqual([PAGE_A, PAGE_C].sort());
+    expect(await storedKeys()).not.toContain(`wm:notes:${PAGE_B}`);
+  });
+
+  it('deleteNotes with no notes does nothing', async () => {
+    const remove = vi.spyOn(fakeBrowser.storage.local, 'remove');
+    await deleteNotes([]);
+    expect(remove).not.toHaveBeenCalled();
+  });
+});
+
+describe('credentials in saved URLs', () => {
+  it('redacts tokens from a note URL when it is saved', async () => {
+    const saved = await saveNote(makeNote({ id: 'x', url: `${PAGE_A}?token=s3cr3t&tab=2#access_token=abc` }));
+    const stored = await getNote(PAGE_A, 'x');
+    expect(stored?.url).toBe(`${PAGE_A}?token=REDACTED&tab=2#access_token=REDACTED`);
+    expect(saved.url).toBe(stored?.url);
+  });
+
+  it('redacts tokens from imported notes too', async () => {
+    await bulkPutNotes([makeNote({ id: 'x', url: `${PAGE_A}?api_key=k1` })]);
+    expect((await getNote(PAGE_A, 'x'))?.url).toBe(`${PAGE_A}?api_key=REDACTED`);
+  });
+
+  it('leaves URLs without credentials untouched', async () => {
+    await saveNote(makeNote({ id: 'x', url: `${PAGE_A}?q=a%20b#section` }));
+    expect((await getNote(PAGE_A, 'x'))?.url).toBe(`${PAGE_A}?q=a%20b#section`);
+  });
+});
+
+describe('bulkPutNotes keeps hasScreenshot true only for stored screenshots', () => {
+  it('flags notes whose screenshot came with them, and clears the flag when none is stored', async () => {
+    await bulkPutNotes(
+      [makeNote({ id: 'with', hasScreenshot: false }), makeNote({ id: 'without', hasScreenshot: true })],
+      { with: 'data:image/jpeg;base64,AAAA' },
+    );
+    expect((await getNote(PAGE_A, 'with'))?.hasScreenshot).toBe(true);
+    expect((await getNote(PAGE_A, 'without'))?.hasScreenshot).toBe(false);
+  });
+
+  it('keeps the flag of a newer copy when the screenshot is already stored here', async () => {
+    await saveNote(makeNote({ id: 'x', hasScreenshot: true, updatedAt: 1 }));
+    await saveScreenshot('x', 'data:image/jpeg;base64,AAAA');
+    await bulkPutNotes([makeNote({ id: 'x', hasScreenshot: true, updatedAt: 2, body: 'newer' })]);
+    expect(await getNote(PAGE_A, 'x')).toMatchObject({ body: 'newer', hasScreenshot: true });
+  });
+
+  it("does not change the caller's notes", async () => {
+    const note = makeNote({ id: 'x', hasScreenshot: true });
+    await bulkPutNotes([note]);
+    expect(note.hasScreenshot).toBe(true);
+  });
+
+  it('does not rewrite pages whose incoming notes were all older', async () => {
+    await saveNote(makeNote({ id: 'x', updatedAt: 500 }));
+    const set = vi.spyOn(fakeBrowser.storage.local, 'set');
+    expect(await bulkPutNotes([makeNote({ id: 'x', updatedAt: 100 })])).toEqual({ added: 0, updated: 0, skipped: 1 });
+    expect(set).not.toHaveBeenCalled();
   });
 });

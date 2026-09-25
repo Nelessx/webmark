@@ -47,11 +47,25 @@ const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  // --- A web page that is not HTML: WebMark's content script declines it ---
+  '.xml': 'application/xml; charset=utf-8',
 };
 
 /** Served with strict-*.html: no inline scripts or styles, images only from the page's own origin. */
 export const STRICT_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'";
+
+// --- Pages that restrict frames (isolated note editor, see editor-isolation.spec.ts) ---
+
+/** Served with no-frames-*.html: a CSP that allows no frames at all. */
+export const NO_FRAMES_CSP = "frame-src 'none'; child-src 'none'";
+
+/** Extra response headers by page name prefix. */
+const PAGE_HEADERS: [prefix: string, headers: Record<string, string>][] = [
+  ['no-frames-', { 'content-security-policy': NO_FRAMES_CSP }],
+  // Cross-origin isolated: every framed document must opt in (extension pages don't).
+  ['coep-', { 'cross-origin-embedder-policy': 'require-corp', 'cross-origin-opener-policy': 'same-origin' }],
+];
 
 async function startStaticServer(): Promise<StaticServer & { close(): Promise<void> }> {
   const server = createServer((req, res) => {
@@ -71,6 +85,7 @@ async function startStaticServer(): Promise<StaticServer & { close(): Promise<vo
           'cache-control': 'no-store',
         };
         if (name.startsWith('strict-')) headers['content-security-policy'] = STRICT_CSP;
+        for (const [prefix, extra] of PAGE_HEADERS) if (name.startsWith(prefix)) Object.assign(headers, extra);
         res.writeHead(200, headers);
         res.end(body);
       },
@@ -121,6 +136,8 @@ export class Extension {
 
   async clearStorage(): Promise<void> {
     await (await this.worker()).evaluate(() => chrome.storage.local.clear());
+    // --- Screenshots live in IndexedDB (see the section at the end of this class) ---
+    await this.clearScreenshots();
   }
 
   async storage(keys: string | string[] | null = null): Promise<Record<string, unknown>> {
@@ -224,6 +241,49 @@ export class Extension {
     // The worker is torn down mid-call.
     await old.evaluate(() => chrome.runtime.reload()).catch(() => undefined);
     return next;
+  }
+
+  // --- Screenshots: IndexedDB "webmark" / "screenshots" in the extension's origin (src/lib/screenshotDb.ts) ---
+
+  /** A note's stored screenshot (data URL), or undefined. */
+  async screenshot(noteId: string): Promise<string | undefined> {
+    return (await this.screenshotDb('get', noteId)) as string | undefined;
+  }
+
+  /** Ids of all notes with a stored screenshot. */
+  async screenshotIds(): Promise<string[]> {
+    return ((await this.screenshotDb('keys')) as string[]).sort();
+  }
+
+  async clearScreenshots(): Promise<void> {
+    await this.screenshotDb('clear');
+  }
+
+  private async screenshotDb(op: 'get' | 'keys' | 'clear', noteId = ''): Promise<unknown> {
+    return (await this.worker()).evaluate(
+      ({ op, noteId }) =>
+        new Promise((resolve, reject) => {
+          // Same version and upgrade as the extension, so opening it first never leaves it without its store.
+          const open = indexedDB.open('webmark', 1);
+          open.onupgradeneeded = () => open.result.createObjectStore('screenshots');
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const db = open.result;
+            const tx = db.transaction('screenshots', op === 'clear' ? 'readwrite' : 'readonly');
+            const store = tx.objectStore('screenshots');
+            const request = op === 'get' ? store.get(noteId) : op === 'keys' ? store.getAllKeys() : store.clear();
+            tx.oncomplete = () => {
+              db.close();
+              resolve(request.result);
+            };
+            tx.onerror = () => {
+              db.close();
+              reject(tx.error);
+            };
+          };
+        }),
+      { op, noteId },
+    );
   }
 }
 

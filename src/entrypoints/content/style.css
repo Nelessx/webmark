@@ -1,4 +1,5 @@
 @import '@/assets/theme.css';
+@import './editor.css';
 
 /*
  * In-page UI, loaded into WebMark's shadow root (cssInjectionMode: 'ui').
@@ -22,33 +23,48 @@
   visibility: hidden !important;
 }
 
+/*
+ * The design tokens are declared on our own element (theme.css), not only on
+ * :host: custom properties inherit through the shadow boundary, and a page
+ * rule on the host element would beat :host. Fonts are generic families only,
+ * so a page @font-face named like one of ours (with per-character
+ * unicode-range downloads) can't learn which characters our UI shows.
+ */
 .wm-container {
-  font-family: var(--wm-font);
-  font-size: 13px;
-  line-height: 1.45;
-  color: var(--wm-text);
-  color-scheme: light dark;
-  direction: ltr;
-  text-align: left;
-  -webkit-font-smoothing: antialiased;
+  --wm-font: system-ui, sans-serif;
+  --wm-font-mono: monospace;
 }
 
-.wm-container *,
-.wm-container *::before,
-.wm-container *::after {
-  box-sizing: border-box;
-}
-
-.wm-container button,
-.wm-container input,
-.wm-container textarea {
-  font: inherit;
-  color: inherit;
+/*
+ * The app layer is promoted to the top layer (a manual popover), so a
+ * transformed / filtered / contained <html> or <body> can't become the
+ * containing block of our fixed-position UI. Reset the UA popover styles.
+ */
+.wm-app-root {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
   margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  color: inherit;
+  pointer-events: none;
 }
 
-.wm-container button {
-  cursor: pointer;
+.wm-app-root::backdrop {
+  display: none;
+  pointer-events: none;
+}
+
+.wm-app {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
 }
 
 .wm-picker-layer {
@@ -195,7 +211,47 @@
 
 /* ---------------------------------------------------------------- Editor */
 
-.wm-editor {
+/*
+ * The isolated editor: an extension page framed in our shadow root. The frame
+ * is clipped (drawing and hit testing) to the form's height; the backdrop
+ * draws the card's shadow, which the clip would cut off.
+ */
+.wm-editor-frame {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.wm-editor-frame__backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: var(--wm-radius-lg);
+  background: var(--wm-surface);
+  box-shadow: var(--wm-shadow-lg);
+}
+
+.wm-editor-frame__frame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+}
+
+.wm-editor-frame--shake {
+  animation: wm-shake 360ms ease;
+}
+
+/* The in-page fallback editor, where the page can see what is typed. */
+.wm-editor--floating {
   position: fixed;
   top: 0;
   left: 0;
@@ -203,246 +259,8 @@
   max-width: calc(100vw - 16px);
   max-height: calc(100vh - 16px);
   overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: var(--wm-surface);
-  color: var(--wm-text);
-  border: 1px solid var(--wm-border);
-  border-radius: var(--wm-radius-lg);
   box-shadow: var(--wm-shadow-lg);
   pointer-events: auto;
-}
-
-.wm-editor--shake {
-  animation: wm-shake 360ms ease;
-}
-
-@keyframes wm-shake {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  20% {
-    transform: translateX(-6px);
-  }
-  40% {
-    transform: translateX(5px);
-  }
-  60% {
-    transform: translateX(-3px);
-  }
-  80% {
-    transform: translateX(2px);
-  }
-}
-
-.wm-editor__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-height: 20px;
-}
-
-.wm-editor__title {
-  font-weight: 700;
-}
-
-.wm-editor__shot {
-  display: block;
-  max-width: 96px;
-  max-height: 36px;
-  object-fit: cover;
-  border: 1px solid var(--wm-border);
-  border-radius: 4px;
-}
-
-.wm-input {
-  display: block;
-  width: 100%;
-  padding: 7px 9px;
-  background: var(--wm-surface-2);
-  border: 1px solid var(--wm-border);
-  border-radius: var(--wm-radius-sm);
-  outline: none;
-  line-height: 1.45;
-}
-
-.wm-input::placeholder {
-  color: var(--wm-text-muted);
-  opacity: 1;
-}
-
-.wm-input:focus {
-  background: var(--wm-surface);
-  border-color: var(--wm-accent);
-  box-shadow: 0 0 0 3px var(--wm-accent-soft);
-}
-
-.wm-editor__label {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.wm-editor__body {
-  min-height: 72px;
-  max-height: 240px;
-  resize: none;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.wm-editor__tags {
-  font-size: 12px;
-}
-
-.wm-editor__meta {
-  color: var(--wm-text-muted);
-  font-size: 11.5px;
-}
-
-.wm-segmented {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 2px;
-  padding: 2px;
-  background: var(--wm-surface-2);
-  border: 1px solid var(--wm-border);
-  border-radius: var(--wm-radius-sm);
-}
-
-.wm-segmented__option {
-  padding: 4px 12px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--wm-text-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.wm-segmented__option[aria-checked='true'] {
-  background: var(--wm-surface);
-  color: var(--wm-text);
-  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.12);
-}
-
-.wm-segmented__option[data-wm-status-option='resolved'][aria-checked='true'] {
-  color: var(--wm-success);
-}
-
-.wm-segmented__option:focus-visible {
-  outline: 2px solid var(--wm-accent);
-  outline-offset: 1px;
-}
-
-.wm-editor__footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.wm-editor__secondary {
-  display: flex;
-  gap: 2px;
-}
-
-.wm-editor__primary {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.wm-editor__confirm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 8px;
-  background: var(--wm-danger-soft);
-  border-radius: var(--wm-radius-sm);
-}
-
-.wm-editor__confirm-text {
-  flex: 1;
-  min-width: 120px;
-  font-weight: 500;
-}
-
-/* --------------------------------------------------------------- Buttons */
-
-.wm-btn {
-  padding: 6px 12px;
-  background: var(--wm-surface);
-  color: var(--wm-text);
-  border: 1px solid var(--wm-border-strong);
-  border-radius: var(--wm-radius-sm);
-  font-size: 12.5px;
-  font-weight: 500;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.wm-btn:hover {
-  background: var(--wm-surface-2);
-}
-
-.wm-btn:focus-visible {
-  outline: 2px solid var(--wm-accent);
-  outline-offset: 1px;
-}
-
-.wm-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.wm-btn--primary {
-  background: var(--wm-accent);
-  border-color: var(--wm-accent);
-  color: var(--wm-accent-contrast);
-}
-
-.wm-btn--primary:hover:not(:disabled) {
-  background: var(--wm-accent-hover);
-}
-
-.wm-btn--primary:disabled:hover {
-  background: var(--wm-accent);
-}
-
-.wm-btn--danger {
-  background: var(--wm-danger);
-  border-color: var(--wm-danger);
-  color: #ffffff;
-}
-
-.wm-btn--danger:hover {
-  background: var(--wm-danger);
-  filter: brightness(0.95);
-}
-
-.wm-btn--ghost {
-  padding: 6px 8px;
-  background: transparent;
-  border-color: transparent;
-  color: var(--wm-text-muted);
-}
-
-.wm-btn--ghost:hover {
-  background: var(--wm-surface-2);
-  color: var(--wm-text);
-}
-
-.wm-btn--danger-text:hover {
-  background: var(--wm-danger-soft);
-  color: var(--wm-danger);
 }
 
 .wm-icon-btn {
@@ -604,7 +422,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wm-editor--shake,
+  .wm-editor-frame--shake,
   .wm-toast {
     animation: none;
   }

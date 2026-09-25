@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Account settings</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 0; padding: 24px; font: 15px/1.5 Arial, Helvetica, sans-serif; color: #1d1d27; background: #f4f5f9; }
+      .panel { max-width: 520px; padding: 16px 20px; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }
+      .panel h1 { margin: 0 0 8px; font-size: 22px; }
+      dialog { width: 420px; padding: 20px 24px; border: 1px solid #e2e4ee; border-radius: 12px; }
+      dialog::backdrop { background: rgba(20, 20, 40, 0.45); }
+      dialog h2 { margin: 0 0 8px; font-size: 18px; }
+    </style>
+  </head>
+  <body>
+    <!--
+      A modal <dialog> (showModal) makes everything outside it inert. Like many
+      modal libraries the page also traps focus: a capture-phase focusin
+      listener pulls focus back into the dialog and counts it in
+      window.__trapped.
+    -->
+    <main class="panel">
+      <h1>Account</h1>
+      <p id="plan">Plan: Team (12 seats)</p>
+      <button id="open" type="button">Edit profile</button>
+    </main>
+    <dialog id="profile" aria-labelledby="profile-title">
+      <h2 id="profile-title">Edit profile</h2>
+      <p id="display-name">Display name: Dana Whitfield</p>
+      <form method="dialog"><button id="close" value="close">Close</button></form>
+    </dialog>
+    <script>
+      (function () {
+        'use strict';
+        var dialog = document.getElementById('profile');
+        window.__trapped = 0;
+        document.getElementById('open').addEventListener('click', function () {
+          dialog.showModal();
+        });
+        document.addEventListener(
+          'focusin',
+          function (event) {
+            if (!dialog.open || dialog.contains(event.target)) return;
+            window.__trapped++;
+            document.getElementById('close').focus();
+          },
+          true,
+        );
+      })();
+    </script>
+  </body>
+</html>

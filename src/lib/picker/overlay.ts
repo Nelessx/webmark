@@ -1,3 +1,4 @@
+import { promoteToTopLayer } from '../topLayer';
 import { placeTooltip } from './geometry';
 import { PICKER_CSS } from './styles';
 
@@ -5,10 +6,20 @@ export interface Overlay {
   /** Highlight `el`. `instant` skips the glide transition (scroll, first show). */
   show(el: Element, instant: boolean): void;
   hide(): void;
-  /** Move the hint bar to the top edge (when the pointer is down by the bottom one). */
-  setHintAtTop(atTop: boolean): void;
+  /**
+   * Place the hint bar for the pointer at (x, y), or `null` when it is outside
+   * the window. Near the bottom edge the bar moves to the top, out of the way,
+   * unless the pointer is heading for it (its Cancel button must stay
+   * reachable): then it stays, faded until the pointer is on it.
+   */
+  placeHint(pointer: { x: number; y: number } | null): void;
   destroy(): void;
 }
+
+/** Pointer this close to the bottom edge moves the hint bar to the top, out of the way. */
+const HINT_FLIP_ZONE = 96;
+/** Horizontal slack around the hint bar in which the pointer counts as heading for it. */
+const HINT_REACH = 24;
 
 const HINT_KEYS: readonly [key: string, action: string][] = [
   ['↑', 'parent'],
@@ -23,7 +34,11 @@ const HINT_KEYS: readonly [key: string, action: string][] = [
  * hit-testable. DOM writes are skipped when nothing changed, and the tooltip
  * is only measured when its text changes.
  */
-export function createOverlay(container: HTMLElement, describe: (el: Element) => string): Overlay {
+export function createOverlay(
+  container: HTMLElement,
+  describe: (el: Element) => string,
+  onCancel: () => void,
+): Overlay {
   const doc = container.ownerDocument;
   const root = createEl(doc, 'div', 'wm-picker');
   const style = doc.createElement('style');
@@ -32,7 +47,7 @@ export function createOverlay(container: HTMLElement, describe: (el: Element) =>
   const tip = createEl(doc, 'div', 'wm-picker-tip');
   const tipLabel = createEl(doc, 'span', 'wm-picker-tip-label');
   const tipSize = createEl(doc, 'span', 'wm-picker-tip-size');
-  const hint = createHint(doc);
+  const hint = createHint(doc, onCancel);
   tip.append(tipLabel, tipSize);
   box.hidden = true;
   tip.hidden = true;
@@ -48,6 +63,7 @@ export function createOverlay(container: HTMLElement, describe: (el: Element) =>
   let tipNeedsMeasure = true;
   let instantClass = false;
   let hintAtTop = false;
+  let hintFaded = false;
   let visible = false;
   const boxState = { x: NaN, y: NaN, width: NaN, height: NaN };
   const tipState = { x: NaN, y: NaN };
@@ -127,10 +143,26 @@ export function createOverlay(container: HTMLElement, describe: (el: Element) =>
     hide() {
       setVisible(false);
     },
-    setHintAtTop(atTop) {
-      if (atTop === hintAtTop) return;
-      hint.classList.toggle('wm-picker-hint--top', atTop);
-      hintAtTop = atTop;
+    placeHint(pointer) {
+      const win = doc.defaultView;
+      const nearBottom = !!pointer && !!win && pointer.y > win.innerHeight - HINT_FLIP_ZONE;
+      let atTop = false;
+      let faded = false;
+      if (pointer && nearBottom) {
+        const r = hint.getBoundingClientRect();
+        const headingForHint = pointer.x >= r.left - HINT_REACH && pointer.x <= r.right + HINT_REACH;
+        const onHint = headingForHint && pointer.y >= r.top && pointer.y <= r.bottom;
+        atTop = !headingForHint;
+        faded = headingForHint && !onHint;
+      }
+      if (atTop !== hintAtTop) {
+        hint.classList.toggle('wm-picker-hint--top', atTop);
+        hintAtTop = atTop;
+      }
+      if (faded !== hintFaded) {
+        hint.classList.toggle('wm-picker-hint--faded', faded);
+        hintFaded = faded;
+      }
     },
     destroy() {
       root.remove();
@@ -148,13 +180,16 @@ function createEl<K extends keyof HTMLElementTagNameMap>(
   return el;
 }
 
-/** "Click to select · ↑ parent · ↓ child · Enter confirm · Esc cancel", with key caps. */
-function createHint(doc: Document): HTMLElement {
+/** "Click to select · ↑ parent · ↓ child · Enter confirm · Esc cancel", with key caps and a Cancel button. */
+function createHint(doc: Document, onCancel: () => void): HTMLElement {
   const hint = createEl(doc, 'div', 'wm-picker-hint');
   hint.setAttribute('role', 'status');
+  // The key hints give way (clipped) on narrow windows; the Cancel button doesn't.
+  const keys = createEl(doc, 'span', 'wm-picker-hint-keys');
   const lead = createEl(doc, 'span');
   lead.textContent = 'Click to select';
-  hint.append(createEl(doc, 'span', 'wm-picker-hint-dot'), lead);
+  keys.append(lead);
+  hint.append(createEl(doc, 'span', 'wm-picker-hint-dot'), keys);
   for (const [key, action] of HINT_KEYS) {
     const sep = createEl(doc, 'span', 'wm-picker-hint-sep');
     sep.textContent = ' · ';
@@ -162,24 +197,18 @@ function createHint(doc: Document): HTMLElement {
     const kbd = createEl(doc, 'kbd');
     kbd.textContent = key;
     item.append(kbd, ` ${action}`);
-    hint.append(sep, item);
+    keys.append(sep, item);
   }
+  // For mouse users, and when the keyboard is elsewhere (picking started from the side panel).
+  const cancel = createEl(doc, 'button', 'wm-picker-cancel');
+  cancel.type = 'button';
+  cancel.textContent = 'Cancel';
+  cancel.setAttribute('data-wm-picker-cancel', '');
+  // Don't move focus: the page element that had it keeps it.
+  cancel.addEventListener('mousedown', (event) => event.preventDefault());
+  cancel.addEventListener('click', onCancel);
+  hint.append(cancel);
   return hint;
-}
-
-/**
- * Put the overlay in the browser's top layer when supported, so it renders
- * above any z-index the page uses (and above page popovers and dialogs opened
- * earlier), with the viewport as its containing block.
- */
-function promoteToTopLayer(root: HTMLElement): void {
-  if (typeof root.showPopover !== 'function') return;
-  try {
-    root.setAttribute('popover', 'manual');
-    root.showPopover();
-  } catch {
-    root.removeAttribute('popover');
-  }
 }
 
 function viewportSize(doc: Document): { width: number; height: number } {

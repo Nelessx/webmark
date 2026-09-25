@@ -172,8 +172,7 @@ test.describe('in-page notes', () => {
 
     const [note] = await ext.notes(page);
     expect(note?.hasScreenshot).toBe(true);
-    const key = `wm:shot:${note?.id}`;
-    const shot = (await ext.storage(key))[key];
+    const shot = await ext.screenshot(note!.id);
     expect(typeof shot).toBe('string');
     expect(shot as string).toMatch(/^data:image\/jpeg;base64,/);
 

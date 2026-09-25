@@ -1,4 +1,4 @@
-import { WEBMARK_HOST_TAG, isWebmarkNode } from '@/lib/constants';
+import { isWebmarkHost, isWebmarkNode } from '@/lib/constants';
 import type { PickerHandle, PickerOptions } from './index';
 import { safeDescribe } from './describe';
 import { swallowTrailingInput, type TrailingGuardOptions } from './guard';
@@ -48,9 +48,6 @@ const TRAILING_POINTER: TrailingGuardOptions = {
 };
 const TRAILING_KEY_MS = 1000;
 
-/** Pointer this close to the bottom edge moves the hint bar to the top, out of the way. */
-const HINT_FLIP_ZONE = 96;
-
 /** WebMark's own controls (e.g. a toolbar Cancel button) keep working while picking. */
 const WEBMARK_CONTROL_SELECTOR = [
   'a[href]',
@@ -82,7 +79,7 @@ export function createPicker(options: PickerOptions, deps: Partial<PickerDeps> =
   endTrailingGuard?.();
   endTrailingGuard = null;
 
-  const { container, onPick, onCancel } = options;
+  const { container, onPick, onCancel, shadowRoot } = options;
   const doc = container.ownerDocument;
   const maybeWin = doc.defaultView;
   if (!maybeWin || !container.isConnected) {
@@ -97,7 +94,7 @@ export function createPicker(options: PickerOptions, deps: Partial<PickerDeps> =
   const isTrusted = deps.isTrusted ?? ((e) => e.isTrusted);
 
   const listeners = new AbortController();
-  const overlay = createOverlay(container, safeDescribe);
+  const overlay = createOverlay(container, safeDescribe, () => cancel(TRAILING_POINTER));
   const removePageStyle = injectPageStyle(doc);
 
   let active = true;
@@ -159,7 +156,7 @@ export function createPicker(options: PickerOptions, deps: Partial<PickerDeps> =
   }
 
   function onBlockedEvent(e: Event): void {
-    if (isWebmarkControlEvent(e)) return;
+    if (isWebmarkControlEvent(e, shadowRoot)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (!isTrusted(e)) return;
@@ -168,7 +165,7 @@ export function createPicker(options: PickerOptions, deps: Partial<PickerDeps> =
   }
 
   function onTouchEvent(e: Event): void {
-    if (isWebmarkControlEvent(e)) return;
+    if (isWebmarkControlEvent(e, shadowRoot)) return;
     e.stopImmediatePropagation();
   }
 
@@ -261,7 +258,7 @@ export function createPicker(options: PickerOptions, deps: Partial<PickerDeps> =
     if (pointerInside && (pointerMoved || current === hovered)) hoverAt(pointerX, pointerY);
     pointerMoved = false;
     layoutChanged = false;
-    overlay.setHintAtTop(pointerInside && pointerY > win.innerHeight - HINT_FLIP_ZONE);
+    overlay.placeHint(pointerInside ? { x: pointerX, y: pointerY } : null);
     render(instant);
   }
 
@@ -354,15 +351,25 @@ function trailingKey(key: string): TrailingGuardOptions {
 }
 
 /** Pointer input aimed at one of WebMark's own controls (not decoration) passes through untouched. */
-function isWebmarkControlEvent(e: Event): boolean {
+function isWebmarkControlEvent(e: Event, shadowRoot: ShadowRoot | undefined): boolean {
   const target = e.target;
   if (!(target instanceof Node) || !isWebmarkNode(target)) return false;
   for (const node of e.composedPath()) {
     if (!(node instanceof Element)) continue;
-    if (node.localName === WEBMARK_HOST_TAG) return false;
+    if (isWebmarkHost(node)) break;
     if (node.matches(WEBMARK_CONTROL_SELECTOR)) return true;
   }
-  return false;
+  // Seen from the window, a closed shadow root's path ends at its host: ask the root what is under the pointer.
+  const point = eventPoint(e);
+  if (!shadowRoot || !point || typeof shadowRoot.elementFromPoint !== 'function') return false;
+  const hit = shadowRoot.elementFromPoint(point.x, point.y);
+  return !!hit && shadowRoot.contains(hit) && !!hit.closest(WEBMARK_CONTROL_SELECTOR);
+}
+
+function eventPoint(e: Event): { x: number; y: number } | null {
+  if (e instanceof MouseEvent) return { x: e.clientX, y: e.clientY };
+  const touch = (e as Partial<TouchEvent>).changedTouches?.[0];
+  return touch ? { x: touch.clientX, y: touch.clientY } : null;
 }
 
 function runCallback(fn: () => void): void {

@@ -16,6 +16,7 @@ import { TagList } from '@/components/TagList';
 import { Logo } from '@/components/Logo';
 import { NoteCard } from '@/components/NoteCard';
 import { Toaster } from '@/components/Toaster';
+import { showToast } from '@/components/toast';
 import { revealNote } from '@/lib/compat';
 import { DEFAULT_SHORTCUTS, pinNumber } from '@/lib/constants';
 import { deleteNote, updateNote } from '@/lib/storage';
@@ -261,7 +262,11 @@ export function App() {
                       selected={selectedIds.has(note.id)}
                       onSelectChange={(on) => setSelected(note.id, on)}
                       pinNumber={pinNumber(note.id, group.notes)}
-                      onLocate={() => void revealNote(note)}
+                      onLocate={() =>
+                        void revealNote(note).catch(() =>
+                          showToast("Couldn't show this note on its page", { tone: 'danger' }),
+                        )
+                      }
                       locateLabel="Open on page"
                       onUpdate={(patch) => updateNote(note.pageKey, note.id, patch)}
                       onDelete={() => deleteNote(note.pageKey, note.id)}

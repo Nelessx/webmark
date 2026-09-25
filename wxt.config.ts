@@ -18,6 +18,18 @@ export default defineConfig({
     ],
     // Local-first build: WebMark runs on every site. Narrow this before publishing.
     host_permissions: ['<all_urls>'],
+    // --- Isolated note editor (src/lib/editor/protocol.ts) ---
+    // Framed into pages by the content script. Chrome serves it only under a
+    // per-session URL, so pages can't probe for WebMark by loading it; WXT
+    // turns this into MV2's plain list for Firefox (moz-extension:// UUIDs are
+    // per install already).
+    web_accessible_resources: [
+      {
+        resources: ['note-editor.html'],
+        matches: ['<all_urls>'],
+        ...(browser === 'firefox' ? {} : { use_dynamic_url: true }),
+      },
+    ],
     action: {
       default_title: 'WebMark',
     },

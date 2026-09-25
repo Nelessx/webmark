@@ -1,4 +1,4 @@
-import type { Locator, Page } from '@playwright/test';
+import type { Frame, Locator, Page } from '@playwright/test';
 import type { Note } from '../../src/lib/types';
 import { expect, type Extension } from './fixtures';
 
@@ -42,6 +42,13 @@ const PICK_CLICK_GUARD_MS = 500;
 export class WebMark {
   private lastClickPick = 0;
 
+  // --- Note editor surface ---
+  /**
+   * Where the note editor is expected: the isolated extension frame (normal),
+   * or the in-page fallback WebMark uses when a page blocks extension frames.
+   */
+  editorSurface: 'frame' | 'inline' = 'frame';
+
   constructor(
     readonly page: Page,
     readonly ext: Extension,
@@ -60,8 +67,21 @@ export class WebMark {
     return this.page.locator('webmark-ui');
   }
 
+  /** The isolated editor's <iframe> (inside WebMark's shadow root, which is open in the E2E build). */
+  get editorFrame(): Locator {
+    return this.page.locator('iframe[data-wm-editor-frame]');
+  }
+
+  /** The note editor form, inside the editor frame (or in the page for the fallback editor). */
   editor(mode?: 'create' | 'edit'): Locator {
-    return this.page.locator(mode ? `[data-wm-editor="${mode}"]` : '[data-wm-editor]');
+    const selector = mode ? `[data-wm-editor="${mode}"]` : '[data-wm-editor]';
+    return this.editorSurface === 'frame' ? this.editorFrame.contentFrame().locator(selector) : this.page.locator(selector);
+  }
+
+  /** The editor frame's document, once there is one. */
+  async editorDocument(): Promise<Frame | null> {
+    const handle = await this.editorFrame.elementHandle({ timeout: 1000 }).catch(() => null);
+    return (await handle?.contentFrame()) ?? null;
   }
 
   get pins(): Locator {
@@ -140,13 +160,25 @@ export class WebMark {
     await expect(this.pickerHint).toBeHidden();
   }
 
-  /** Which editor field has focus inside WebMark's shadow root. */
+  /** Which editor field has the keyboard: in the editor frame, or (fallback) inside WebMark's shadow root. */
   async focusedField(): Promise<string | null> {
-    return this.page.evaluate(() => {
-      const active = document.querySelector('webmark-ui')?.shadowRoot?.activeElement;
-      if (!active) return null;
-      return ['data-wm-body', 'data-wm-label', 'data-wm-tags'].find((a) => active.hasAttribute(a)) ?? active.localName;
-    });
+    if (this.editorSurface === 'inline') {
+      return this.page.evaluate(() => {
+        const active = document.querySelector('[data-wm-host]')?.shadowRoot?.activeElement;
+        if (!active) return null;
+        return ['data-wm-body', 'data-wm-label', 'data-wm-tags'].find((a) => active.hasAttribute(a)) ?? active.localName;
+      });
+    }
+    const frame = await this.editorDocument();
+    if (!frame) return null;
+    return frame
+      .evaluate(() => {
+        // Only a focused frame gets the keys.
+        const active = document.hasFocus() ? document.activeElement : null;
+        if (!active || active === document.body) return null;
+        return ['data-wm-body', 'data-wm-label', 'data-wm-tags'].find((a) => active.hasAttribute(a)) ?? active.localName;
+      })
+      .catch(() => null);
   }
 
   /** Type a note into the open editor (it focuses the text box itself) and save with Ctrl+Enter. */

@@ -1,4 +1,5 @@
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
+import type { EditorEvent, EditorFields } from '@/lib/editor/protocol';
 import { sendToBackground, type PageState } from '@/lib/messages';
 import { startPicker } from '@/lib/picker';
 import {
@@ -30,6 +31,10 @@ export interface UiActions {
   setEditorDirty(dirty: boolean): void;
   deleteNote(noteId: string): Promise<void>;
   copyMarkdown(note: Note): Promise<void>;
+  /** The in-page editor's current values, kept by the background for recovery after a reload. */
+  mirrorDraft(values: EditorFields, initial: EditorFields): void;
+  /** The isolated editor frame of this session broke; edit in the page instead. */
+  editorFrameFailed(sessionId: number): void;
   openNote(noteId: string): void;
   setHover(noteId: string | null): void;
   closeOrphanCard(): void;
@@ -43,6 +48,8 @@ export interface ControllerDeps {
   store: AppStore;
   layout: LayoutTracker;
   host: HTMLElement;
+  /** WebMark's (closed) shadow root: the picker looks inside it for our own controls. */
+  shadowRoot: ShadowRoot;
   uiContainer: HTMLElement;
   pickerLayer: HTMLElement;
 }
@@ -61,6 +68,7 @@ export class Controller implements UiActions {
   private readonly store: AppStore;
   private readonly layout: LayoutTracker;
   private readonly pickerLayer: HTMLElement;
+  private readonly shadowRoot: ShadowRoot;
   private readonly timers = new Timers();
   private readonly toaster: Toaster;
   private readonly resolver: NoteResolver;
@@ -78,10 +86,19 @@ export class Controller implements UiActions {
     this.store = store;
     this.layout = layout;
     this.pickerLayer = deps.pickerLayer;
+    this.shadowRoot = deps.shadowRoot;
     this.toaster = new Toaster(store, this.timers);
     this.resolver = new NoteResolver(ctx, store, host, layout.schedule);
     this.notes = new PageNotes(ctx, store, this.resolver);
-    this.editor = new EditorController({ ctx, store, resolver: this.resolver, toaster: this.toaster, host, uiContainer });
+    this.editor = new EditorController({
+      ctx,
+      store,
+      resolver: this.resolver,
+      toaster: this.toaster,
+      timers: this.timers,
+      host,
+      uiContainer,
+    });
     this.contextMenu = new ContextMenuTracker(ctx);
   }
 
@@ -114,7 +131,10 @@ export class Controller implements UiActions {
     });
 
     this.ready = this.boot();
-    void this.ready.then(() => this.consumePendingFocus());
+    void this.ready.then(async () => {
+      await this.recoverDraft();
+      await this.consumePendingFocus();
+    });
   }
 
   // --- Message-facing API (see messaging.ts) -------------------------------
@@ -132,6 +152,7 @@ export class Controller implements UiActions {
     try {
       this.picker = startPicker({
         container: this.pickerLayer,
+        shadowRoot: this.shadowRoot,
         onPick: (el) => {
           finish();
           void this.editor.openForElement(el, true);
@@ -154,6 +175,17 @@ export class Controller implements UiActions {
     if (!this.editor.release()) return false;
     void this.editor.openForElement(el, true);
     return true;
+  }
+
+  /** Leave picking mode without picking (e.g. Esc in the side panel, which has the keyboard). */
+  cancelPicker(): boolean {
+    this.stopPicker();
+    return true;
+  }
+
+  /** An event of the isolated editor frame, relayed by the background. */
+  onEditorEvent(token: string, event: EditorEvent): boolean {
+    return this.editor.onFrameEvent(token, event);
   }
 
   async setPinsVisible(visible?: boolean): Promise<boolean> {
@@ -204,6 +236,8 @@ export class Controller implements UiActions {
   readonly setEditorDirty = (dirty: boolean) => this.editor.setDirty(dirty);
   readonly deleteNote = (noteId: string) => this.editor.remove(noteId);
   readonly copyMarkdown = (note: Note) => this.editor.copyMarkdown(note);
+  readonly mirrorDraft = (values: EditorFields, initial: EditorFields) => this.editor.mirrorDraft(values, initial);
+  readonly editorFrameFailed = (sessionId: number) => this.editor.frameFailed(sessionId);
   readonly dismissToast = (id: number) => this.toaster.dismiss(id);
   readonly loadScreenshot = (noteId: string) => getScreenshot(noteId).catch(() => undefined);
   readonly closeOrphanCard = () => this.store.set({ orphanNoteId: null });
@@ -237,11 +271,17 @@ export class Controller implements UiActions {
   }
 
   private onNotesChanged(changes: NotesChange[]): void {
-    if (!this.notes.applyChange(changes)) return;
-    const state = this.store.get();
-    if (state.editor?.mode === 'edit' && !findNote(state, state.editor.noteId)) {
-      this.editor.close();
-      this.toaster.show('This note was deleted');
+    this.notes.applyChange(changes);
+    // Checked against the editor's own page: after an SPA navigation that isn't the current one.
+    this.editor.onNotesChanged(changes);
+  }
+
+  /** A reload (or leaving and coming back) left an unsaved note on this page: reopen it. */
+  private async recoverDraft(): Promise<void> {
+    const pageKey = this.store.get().pageKey;
+    const response = await sendToBackground({ type: 'wm:editor-recover', pageKey });
+    if (response?.request && !this.ctx.isInvalid && pageKey === this.store.get().pageKey) {
+      this.editor.restore(response.request);
     }
   }
 
@@ -251,7 +291,8 @@ export class Controller implements UiActions {
     const pageKey = getPageKey(location.href);
     if (pageKey === this.store.get().pageKey) return;
     this.stopPicker();
-    this.editor.close(false);
+    // A note with unsaved changes stays open: it is saved to the page it was written on.
+    this.editor.closeIfUntouched();
     this.notes.switchTo(pageKey);
     this.ready = this.notes.load(SPA_RESOLVE_DELAY_MS);
     void this.ready.then(() => this.consumePendingFocus());

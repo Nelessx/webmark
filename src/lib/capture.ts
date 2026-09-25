@@ -200,26 +200,58 @@ export function isCaptureQuotaError(error: unknown): boolean {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** PNG data URL of the visible part of the active tab in `windowId`, retrying once on Chrome's rate limit. */
-export async function captureVisibleTab(windowId: number, retryDelayMs = QUOTA_RETRY_DELAY_MS): Promise<string> {
+/** The tab whose element is being captured, and its window. */
+export interface CaptureTarget {
+  tabId: number;
+  windowId: number;
+}
+
+export const TAB_NOT_VISIBLE_ERROR = 'The tab must stay visible while its screenshot is taken';
+
+/** Whether the target tab is (still) the one its window shows. */
+async function isShowing(target: CaptureTarget): Promise<boolean> {
   try {
-    return await browser.tabs.captureVisibleTab(windowId, { format: 'png' });
+    const tab = await browser.tabs.get(target.tabId);
+    return tab.active && tab.windowId === target.windowId;
+  } catch {
+    // The tab was closed.
+    return false;
+  }
+}
+
+/**
+ * captureVisibleTab shoots whatever the window shows. The request can wait
+ * (a waking service worker, the rate-limit retry) while the user switches
+ * tabs, so the target is checked right before and right after each capture,
+ * and an image that may show another tab is thrown away.
+ */
+async function captureTarget(target: CaptureTarget): Promise<string> {
+  if (!(await isShowing(target))) throw new Error(TAB_NOT_VISIBLE_ERROR);
+  const image = await browser.tabs.captureVisibleTab(target.windowId, { format: 'png' });
+  if (!(await isShowing(target))) throw new Error(TAB_NOT_VISIBLE_ERROR);
+  return image;
+}
+
+/** PNG data URL of the visible part of the target tab, retrying once on Chrome's rate limit. */
+export async function captureVisibleTab(target: CaptureTarget, retryDelayMs = QUOTA_RETRY_DELAY_MS): Promise<string> {
+  try {
+    return await captureTarget(target);
   } catch (error) {
     if (!isCaptureQuotaError(error)) throw error;
     await sleep(retryDelayMs);
-    return browser.tabs.captureVisibleTab(windowId, { format: 'png' });
+    return captureTarget(target);
   }
 }
 
 /** Capture + crop in one step. Never throws: failures come back as `{ error }`. */
 export async function captureElement(
-  windowId: number,
+  target: CaptureTarget,
   rect: ViewportRect,
   devicePixelRatio: number,
   options: CropOptions & { retryDelayMs?: number } = {},
 ): Promise<CaptureResult> {
   try {
-    const screenshot = await captureVisibleTab(windowId, options.retryDelayMs);
+    const screenshot = await captureVisibleTab(target, options.retryDelayMs);
     return { dataUrl: await cropScreenshot(screenshot, rect, devicePixelRatio, options) };
   } catch (error) {
     return { error: errorMessage(error) };

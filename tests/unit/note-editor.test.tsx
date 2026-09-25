@@ -59,6 +59,11 @@ function typeInto(field: HTMLInputElement, value: string): void {
   field.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+function typeIntoTextarea(field: HTMLTextAreaElement, value: string): void {
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(field, value);
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 /** Rendered synchronously, so a click right after sees the new props. */
 function renderEditor(current: Note, onSave: (patch: NotePatch) => Promise<void>, onCancel = () => {}) {
   flushSync(() => root.render(<NoteEditor note={current} onSave={onSave} onCancel={onCancel} />));
@@ -75,6 +80,27 @@ it('saves only the fields edited in the form, even when the note changed meanwhi
 
   await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
   expect(onSave).toHaveBeenCalledWith({ label: 'Active users card' });
+});
+
+it('cannot save an emptied note, like the editor on the page', async () => {
+  const onSave = vi.fn(async (_patch: NotePatch) => {});
+  renderEditor(note, onSave);
+  const body = container.querySelector<HTMLTextAreaElement>('textarea')!;
+  const save = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+
+  typeIntoTextarea(body, '   \n ');
+  await vi.waitFor(() => expect(save.disabled).toBe(true));
+  // Neither the button nor Ctrl+Enter saves it.
+  save.click();
+  body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+  container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(onSave).not.toHaveBeenCalled();
+
+  typeIntoTextarea(body, 'Count weekly actives');
+  await vi.waitFor(() => expect(save.disabled).toBe(false));
+  save.click();
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith({ body: 'Count weekly actives' }));
 });
 
 it('closes without saving when nothing was edited in the form', async () => {

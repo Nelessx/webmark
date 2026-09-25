@@ -29,7 +29,7 @@ test.describe('real-browser behaviour', () => {
 
     const [note] = await ext.notes(page);
     expect(note?.hasScreenshot).toBe(true);
-    const shot = (await ext.storage(`wm:shot:${note!.id}`))[`wm:shot:${note!.id}`] as string;
+    const shot = (await ext.screenshot(note!.id)) as string;
     expect(shot).toMatch(/^data:image\/jpeg;base64,/);
     // The element was scrolled fully into view first (to the top edge, so the
     // padding above it is outside the viewport), so the whole card is in the shot.

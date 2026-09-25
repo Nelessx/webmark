@@ -6,8 +6,9 @@ const MAX_REATTACH = 50;
  * Re-attach the shadow host if the page removes it, e.g. Turbo/pjax replacing
  * the whole <body> on navigation or a framework re-rendering body's children.
  * Only direct children of <html> and <body> are observed, so this is cheap.
+ * `onReattached` runs after each re-attach (leaving the document hid our top-layer popover).
  */
-export function keepHostAttached(ctx: ContentScriptContext, host: HTMLElement): void {
+export function keepHostAttached(ctx: ContentScriptContext, host: HTMLElement, onReattached?: () => void): void {
   let body = document.body;
   let reattached = 0;
 
@@ -27,6 +28,7 @@ export function keepHostAttached(ctx: ContentScriptContext, host: HTMLElement): 
     if (!host.isConnected && reattached < MAX_REATTACH) {
       reattached++;
       (document.body ?? document.documentElement).append(host);
+      onReattached?.();
     }
   });
 

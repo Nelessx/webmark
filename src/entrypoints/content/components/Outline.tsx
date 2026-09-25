@@ -1,4 +1,5 @@
-import { useBox } from './context';
+import { outsideModal } from '../store';
+import { useAppState, useBox } from './context';
 
 export type OutlineVariant = 'target' | 'hover' | 'flash';
 
@@ -7,7 +8,8 @@ const PAD = 3;
 /** A box drawn over a page element. The page element itself is never styled. */
 export function Outline({ element, variant }: { element: Element; variant: OutlineVariant }) {
   const box = useBox(element);
-  if (!box?.visible) return null;
+  const modal = useAppState((s) => s.modal);
+  if (!box?.visible || outsideModal(modal, element)) return null;
   return (
     <div
       className={`wm-outline wm-outline--${variant}`}

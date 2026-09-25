@@ -1,6 +1,6 @@
 import { pinNumber } from './constants';
 import type { Note } from './types';
-import { displayPageKey, siteOf } from './url';
+import { displayPageKey, redactUrl, sanitizePageKey, siteOf } from './url';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -67,6 +67,14 @@ function codeSpan(text: string): string {
   return `${fence}${pad}${content}${pad}${fence}`;
 }
 
+/**
+ * Exported text never carries credentials: tokens in saved URLs are redacted,
+ * and page keys (notes saved by older versions may still have them) lose them.
+ */
+function exportPageKey(pageKey: string): string {
+  return displayPageKey(sanitizePageKey(pageKey));
+}
+
 /** Only link real web/file pages; anything else (javascript:, data:…) is shown as code. */
 function safeLinkTarget(url: string): string | undefined {
   try {
@@ -79,8 +87,9 @@ function safeLinkTarget(url: string): string | undefined {
   }
 }
 
-function pageLink(title: string, url: string, pageKey: string): string {
-  const text = escapeInline(title) || escapeInline(displayPageKey(pageKey)) || 'Untitled page';
+function pageLink(title: string, savedUrl: string, pageKey: string): string {
+  const url = redactUrl(savedUrl);
+  const text = escapeInline(title) || escapeInline(exportPageKey(pageKey)) || 'Untitled page';
   const target = safeLinkTarget(url);
   return target ? `[${text}](${target})` : `${text} (${codeSpan(url)})`;
 }
@@ -220,8 +229,8 @@ function reportPageLines(group: PageGroup): string[] {
   // The newest note carries the page's most recent title and URL.
   const newest = [...group.notes].reverse();
   const title = newest.find((n) => n.pageTitle.trim())?.pageTitle ?? '';
-  const url = newest[0]?.url ?? group.pageKey;
-  const heading = escapeInline(title) || escapeInline(displayPageKey(group.pageKey)) || 'Untitled page';
+  const url = redactUrl(newest[0]?.url ?? sanitizePageKey(group.pageKey));
+  const heading = escapeInline(title) || escapeInline(exportPageKey(group.pageKey)) || 'Untitled page';
   const target = safeLinkTarget(url);
 
   const lines = [`### ${heading}`, '', target ? `<${target}>` : codeSpan(url), ''];
@@ -305,7 +314,7 @@ function csvRow(note: Note): string[] {
     note.id,
     siteLabel(note.pageKey),
     note.pageTitle,
-    note.url,
+    redactUrl(note.url),
     note.label,
     note.body,
     note.status,

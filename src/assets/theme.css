@@ -1,10 +1,15 @@
 /*
  * WebMark design tokens. Shared by extension pages (popup, side panel,
- * dashboard) and the in-page UI (inside a shadow root, hence :host).
+ * dashboard, note editor) and the in-page UI (inside a shadow root).
  * Use px, not rem: inside web pages rem follows the site's root font size.
+ *
+ * In the page the tokens are declared on .wm-container, our element inside
+ * the shadow root: custom properties inherit into the shadow tree, and a page
+ * rule on the host element (webmark-ui { --wm-font: … }) beats :host.
  */
 :root,
-:host {
+:host,
+.wm-container {
   --wm-accent: #5b4cf5;
   --wm-accent-hover: #4a3be0;
   --wm-accent-soft: rgba(91, 76, 245, 0.12);
@@ -44,7 +49,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root,
-  :host {
+  :host,
+  .wm-container {
     --wm-accent: #7c70ff;
     --wm-accent-hover: #8f85ff;
     --wm-accent-soft: rgba(124, 112, 255, 0.18);

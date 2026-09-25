@@ -1,0 +1,293 @@
+/*
+ * WebMark UI base and the note editor form. Shared by the in-page UI (shadow
+ * root) and the isolated editor page (note-editor.html), whose root element
+ * also has the wm-container class. px only: in pages rem follows the site.
+ */
+
+.wm-container {
+  font-family: var(--wm-font);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--wm-text);
+  color-scheme: light dark;
+  direction: ltr;
+  text-align: left;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wm-container *,
+.wm-container *::before,
+.wm-container *::after {
+  box-sizing: border-box;
+}
+
+.wm-container button,
+.wm-container input,
+.wm-container textarea {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+.wm-container button {
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------- Editor */
+
+.wm-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--wm-surface);
+  color: var(--wm-text);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-lg);
+}
+
+.wm-editor--shake {
+  animation: wm-shake 360ms ease;
+}
+
+@keyframes wm-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(5px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+.wm-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.wm-editor__title {
+  font-weight: 700;
+}
+
+.wm-editor__shot {
+  display: block;
+  max-width: 96px;
+  max-height: 36px;
+  object-fit: cover;
+  border: 1px solid var(--wm-border);
+  border-radius: 4px;
+}
+
+.wm-editor__warning {
+  margin: 0;
+  padding: 5px 8px;
+  background: var(--wm-surface-2);
+  border-left: 3px solid var(--wm-warning);
+  border-radius: var(--wm-radius-sm);
+  color: var(--wm-text-muted);
+  font-size: 11.5px;
+}
+
+.wm-input {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  background: var(--wm-surface-2);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-sm);
+  outline: none;
+  line-height: 1.45;
+}
+
+.wm-input::placeholder {
+  color: var(--wm-text-muted);
+  opacity: 1;
+}
+
+.wm-input:focus {
+  background: var(--wm-surface);
+  border-color: var(--wm-accent);
+  box-shadow: 0 0 0 3px var(--wm-accent-soft);
+}
+
+.wm-editor__label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wm-editor__body {
+  min-height: 72px;
+  max-height: 240px;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.wm-editor__tags {
+  font-size: 12px;
+}
+
+.wm-editor__meta {
+  color: var(--wm-text-muted);
+  font-size: 11.5px;
+}
+
+.wm-segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 2px;
+  background: var(--wm-surface-2);
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-sm);
+}
+
+.wm-segmented__option {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wm-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.wm-segmented__option[aria-checked='true'] {
+  background: var(--wm-surface);
+  color: var(--wm-text);
+  box-shadow: 0 1px 2px rgba(20, 20, 40, 0.12);
+}
+
+.wm-segmented__option[data-wm-status-option='resolved'][aria-checked='true'] {
+  color: var(--wm-success);
+}
+
+.wm-segmented__option:focus-visible {
+  outline: 2px solid var(--wm-accent);
+  outline-offset: 1px;
+}
+
+.wm-editor__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.wm-editor__secondary {
+  display: flex;
+  gap: 2px;
+}
+
+.wm-editor__primary {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.wm-editor__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--wm-danger-soft);
+  border-radius: var(--wm-radius-sm);
+}
+
+.wm-editor__confirm-text {
+  flex: 1;
+  min-width: 120px;
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------- Buttons */
+
+.wm-btn {
+  padding: 6px 12px;
+  background: var(--wm-surface);
+  color: var(--wm-text);
+  border: 1px solid var(--wm-border-strong);
+  border-radius: var(--wm-radius-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.wm-btn:hover {
+  background: var(--wm-surface-2);
+}
+
+.wm-btn:focus-visible {
+  outline: 2px solid var(--wm-accent);
+  outline-offset: 1px;
+}
+
+.wm-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.wm-btn--primary {
+  background: var(--wm-accent);
+  border-color: var(--wm-accent);
+  color: var(--wm-accent-contrast);
+}
+
+.wm-btn--primary:hover:not(:disabled) {
+  background: var(--wm-accent-hover);
+}
+
+.wm-btn--primary:disabled:hover {
+  background: var(--wm-accent);
+}
+
+.wm-btn--danger {
+  background: var(--wm-danger);
+  border-color: var(--wm-danger);
+  color: #ffffff;
+}
+
+.wm-btn--danger:hover {
+  background: var(--wm-danger);
+  filter: brightness(0.95);
+}
+
+.wm-btn--ghost {
+  padding: 6px 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--wm-text-muted);
+}
+
+.wm-btn--ghost:hover {
+  background: var(--wm-surface-2);
+  color: var(--wm-text);
+}
+
+.wm-btn--danger-text:hover {
+  background: var(--wm-danger-soft);
+  color: var(--wm-danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wm-editor--shake {
+    animation: none;
+  }
+}

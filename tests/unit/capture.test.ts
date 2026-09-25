@@ -10,6 +10,7 @@ import {
   dataUrlToBlob,
   fitWithin,
   isCaptureQuotaError,
+  TAB_NOT_VISIBLE_ERROR,
 } from '@/lib/capture';
 
 const IMAGE = { width: 1000, height: 800 };
@@ -146,36 +147,102 @@ describe('isCaptureQuotaError', () => {
 });
 
 type CaptureFn = (windowId: number, options: { format: string }) => Promise<string>;
+type GetTabFn = (tabId: number) => Promise<{ id: number; windowId: number; active: boolean }>;
 
 function mockCapture() {
   return vi.spyOn(browser.tabs as unknown as { captureVisibleTab: CaptureFn }, 'captureVisibleTab');
 }
 
+/** The target tab, as tabs.get() reports it on each call; defaults to active in window 7. */
+function mockTab(...states: { active?: boolean; windowId?: number; closed?: boolean }[]) {
+  const spy = vi.spyOn(browser.tabs as unknown as { get: GetTabFn }, 'get');
+  let call = 0;
+  spy.mockImplementation(async (tabId) => {
+    const state = states[Math.min(call++, states.length - 1)] ?? {};
+    if (state.closed) throw new Error(`No tab with id: ${tabId}`);
+    return { id: tabId, windowId: state.windowId ?? 7, active: state.active ?? true };
+  });
+  return spy;
+}
+
+const TARGET = { tabId: 3, windowId: 7 };
 const QUOTA_ERROR = new Error('This request exceeds the MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota.');
 
 describe('captureVisibleTab', () => {
-  it('captures a PNG of the given window', async () => {
+  it('captures a PNG of the target tab’s window', async () => {
+    mockTab({});
     const spy = mockCapture().mockResolvedValue('data:image/png;base64,AAAA');
-    await expect(captureVisibleTab(7, 0)).resolves.toBe('data:image/png;base64,AAAA');
+    await expect(captureVisibleTab(TARGET, 0)).resolves.toBe('data:image/png;base64,AAAA');
     expect(spy).toHaveBeenCalledWith(7, { format: 'png' });
   });
 
   it('retries once after a rate-limit error', async () => {
+    mockTab({});
     const spy = mockCapture().mockRejectedValueOnce(QUOTA_ERROR).mockResolvedValueOnce('data:image/png;base64,AAAA');
-    await expect(captureVisibleTab(1, 0)).resolves.toBe('data:image/png;base64,AAAA');
+    await expect(captureVisibleTab(TARGET, 0)).resolves.toBe('data:image/png;base64,AAAA');
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
   it('gives up after the second rate-limit error', async () => {
+    mockTab({});
     const spy = mockCapture().mockRejectedValue(QUOTA_ERROR);
-    await expect(captureVisibleTab(1, 0)).rejects.toThrow(/quota/);
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(/quota/);
     expect(spy).toHaveBeenCalledTimes(2);
   });
 
   it('does not retry other errors', async () => {
+    mockTab({});
     const spy = mockCapture().mockRejectedValue(new Error('Cannot access a chrome:// URL'));
-    await expect(captureVisibleTab(1, 0)).rejects.toThrow(/chrome:\/\//);
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(/chrome:\/\//);
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('captureVisibleTab only keeps images of the target tab', () => {
+  it('checks the tab right before and right after the capture', async () => {
+    const tabs = mockTab({});
+    mockCapture().mockResolvedValue('data:image/png;base64,AAAA');
+    await captureVisibleTab(TARGET, 0);
+    expect(tabs).toHaveBeenCalledTimes(2);
+    expect(tabs).toHaveBeenCalledWith(3);
+  });
+
+  it('does not capture when the user already switched to another tab', async () => {
+    mockTab({ active: false });
+    const capture = mockCapture().mockResolvedValue('data:image/png;base64,OTHER');
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(TAB_NOT_VISIBLE_ERROR);
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it('discards the image when the tab was switched away during the capture', async () => {
+    mockTab({ active: true }, { active: false });
+    mockCapture().mockResolvedValue('data:image/png;base64,OTHER');
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(TAB_NOT_VISIBLE_ERROR);
+  });
+
+  it('discards the image when the tab moved to another window or closed', async () => {
+    mockTab({}, { windowId: 8 });
+    mockCapture().mockResolvedValue('data:image/png;base64,OTHER');
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(TAB_NOT_VISIBLE_ERROR);
+
+    vi.restoreAllMocks();
+    mockTab({}, { closed: true });
+    mockCapture().mockResolvedValue('data:image/png;base64,OTHER');
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(TAB_NOT_VISIBLE_ERROR);
+  });
+
+  it('checks again around the rate-limit retry: a switch during the wait discards the retry', async () => {
+    // before 1st capture: shown; after the retry wait: another tab is shown.
+    mockTab({ active: true }, { active: false });
+    const capture = mockCapture().mockRejectedValueOnce(QUOTA_ERROR).mockResolvedValue('data:image/png;base64,OTHER');
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(TAB_NOT_VISIBLE_ERROR);
+    expect(capture).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a retried image only if the tab is still shown after it', async () => {
+    mockTab({ active: true }, { active: true }, { active: false });
+    mockCapture().mockRejectedValueOnce(QUOTA_ERROR).mockResolvedValue('data:image/png;base64,OTHER');
+    await expect(captureVisibleTab(TARGET, 0)).rejects.toThrow(TAB_NOT_VISIBLE_ERROR);
   });
 });
 
@@ -246,15 +313,26 @@ describe('captureElement', () => {
 
   it('returns the cropped JPEG', async () => {
     stubCanvas({ width: 1000, height: 800 });
+    mockTab({});
     mockCapture().mockResolvedValue(PNG_DATA_URL);
-    const result = await captureElement(3, { x: 10, y: 10, width: 50, height: 50 }, 1);
+    const result = await captureElement(TARGET, { x: 10, y: 10, width: 50, height: 50 }, 1);
     expect(result).toEqual({ dataUrl: `data:image/jpeg;base64,${btoa('jpeg-bytes')}` });
   });
 
   it('returns an error instead of throwing', async () => {
+    mockTab({});
     mockCapture().mockRejectedValue(new Error('Missing host permission for the tab'));
-    await expect(captureElement(3, { x: 0, y: 0, width: 10, height: 10 }, 1)).resolves.toEqual({
+    await expect(captureElement(TARGET, { x: 0, y: 0, width: 10, height: 10 }, 1)).resolves.toEqual({
       error: 'Missing host permission for the tab',
+    });
+  });
+
+  it('returns an error, and no image, when another tab became visible', async () => {
+    stubCanvas({ width: 1000, height: 800 });
+    mockTab({ active: true }, { active: false });
+    mockCapture().mockResolvedValue(PNG_DATA_URL);
+    await expect(captureElement(TARGET, { x: 10, y: 10, width: 50, height: 50 }, 1)).resolves.toEqual({
+      error: TAB_NOT_VISIBLE_ERROR,
     });
   });
 });

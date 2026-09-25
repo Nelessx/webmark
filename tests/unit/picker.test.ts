@@ -131,7 +131,8 @@ describe('picker lifecycle', () => {
     expect(handle.active).toBe(true);
     const root = overlayPart('wm-picker');
     expect(root.querySelector('style')?.textContent).toContain('.wm-picker-box');
-    expect(overlayPart('wm-picker-hint').textContent).toBe(HINT_TEXT);
+    expect(overlayPart('wm-picker-hint-keys').textContent).toBe(HINT_TEXT);
+    expect(overlayPart('wm-picker-cancel').textContent).toBe('Cancel');
     expect(overlayPart('wm-picker-box').hidden).toBe(true);
     const style = cursorStyle();
     expect(style?.parentNode).toBe(document.head);
@@ -278,10 +279,33 @@ describe('hover highlight', () => {
   it('moves the hint bar to the top when the pointer nears the bottom edge', () => {
     start();
     const hint = overlayPart('wm-picker-hint');
+    stubRect(hint, rect(400, window.innerHeight - 50, 300, 34));
     hover(inner, window.innerHeight - 10);
     expect(hint.classList.contains('wm-picker-hint--top')).toBe(true);
     hover(inner, 10);
     expect(hint.classList.contains('wm-picker-hint--top')).toBe(false);
+  });
+
+  it('keeps the hint bar (and its Cancel button) in place for a pointer heading to it', () => {
+    start();
+    const hint = overlayPart('wm-picker-hint');
+    stubRect(hint, rect(400, window.innerHeight - 50, 300, 34));
+    const pointerAt = (x: number, y: number) => {
+      under = inner;
+      document.body.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, composed: true, clientX: x, clientY: y }));
+    };
+
+    // Right above it: it stays, faded so what's under it shows.
+    pointerAt(500, window.innerHeight - 80);
+    expect(hint.classList.contains('wm-picker-hint--top')).toBe(false);
+    expect(hint.classList.contains('wm-picker-hint--faded')).toBe(true);
+    // On it: fully visible.
+    pointerAt(690, window.innerHeight - 30);
+    expect(hint.classList.contains('wm-picker-hint--top')).toBe(false);
+    expect(hint.classList.contains('wm-picker-hint--faded')).toBe(false);
+    // Away from the bottom edge: normal.
+    pointerAt(500, 10);
+    expect(hint.classList.contains('wm-picker-hint--faded')).toBe(false);
   });
 });
 
@@ -365,6 +389,18 @@ describe('keyboard navigation', () => {
 });
 
 describe('cancel', () => {
+  it("the hint's Cancel button cancels (e.g. picking started from the side panel, which has the keyboard)", () => {
+    const { handle, onPick, onCancel } = start();
+    hover(inner);
+    const click = clickSequence(overlayPart('wm-picker-cancel'));
+
+    expect(click.defaultPrevented).toBe(false);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
+    expect(handle.active).toBe(false);
+    expect(container.childElementCount).toBe(0);
+  });
+
   it('Esc cancels, stops the picker and hides the key from the page', () => {
     vi.useFakeTimers();
     const { handle, onPick, onCancel } = start();
@@ -479,6 +515,45 @@ describe('click to pick', () => {
     expect(clicked).toHaveBeenCalledTimes(1);
     expect(onPick).not.toHaveBeenCalled();
     expect(handle.active).toBe(true);
+  });
+
+  it('finds our controls inside a closed shadow root, whose inside the window never sees', () => {
+    const closedHost = document.createElement(WEBMARK_HOST_TAG);
+    document.body.append(closedHost);
+    const closed = closedHost.attachShadow({ mode: 'closed' });
+    const layer = document.createElement('div');
+    const button = document.createElement('button');
+    const decoration = document.createElement('div');
+    closed.append(layer, button, decoration);
+    const clicked = vi.fn();
+    button.addEventListener('click', clicked);
+    const onPick = vi.fn<(el: Element) => void>();
+    const pick = (shadowRoot?: ShadowRoot) => {
+      const handle = createPicker({ container: layer, onPick, onCancel: () => {}, shadowRoot }, testDeps);
+      handles.push(handle);
+      return handle;
+    };
+    under = inner;
+
+    // Without the root the click looks like one on the host: picked, and our button never gets it.
+    pick();
+    expect(clickSequence(button).defaultPrevented).toBe(true);
+    expect(clicked).not.toHaveBeenCalled();
+    expect(onPick).toHaveBeenCalledWith(inner);
+
+    // With it, the root says what is under the pointer (jsdom has no hit testing).
+    onPick.mockClear();
+    closed.elementFromPoint = () => button;
+    const handle = pick(closed);
+    expect(clickSequence(button).defaultPrevented).toBe(false);
+    expect(clicked).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
+    expect(handle.active).toBe(true);
+
+    // Decoration is not a control: the page element below is picked.
+    closed.elementFromPoint = () => decoration;
+    expect(clickSequence(decoration).defaultPrevented).toBe(true);
+    expect(onPick).toHaveBeenCalledWith(inner);
   });
 
   it('clicks on non-interactive WebMark decoration pick the page element below', () => {
