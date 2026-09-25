@@ -1,5 +1,6 @@
+import { TEST_ID_ATTRIBUTES } from './anchor/stability';
 import { bulkPutNotes, deleteAllNotes, getAllNotes, getScreenshot } from './storage';
-import { NOTE_SCHEMA_VERSION, type DocRect, type ElementAnchor, type Note, type NoteStatus } from './types';
+import { NOTE_SCHEMA_VERSION, type AnchorItem, type DocRect, type ElementAnchor, type Note, type NoteStatus } from './types';
 
 export interface ExportBundle {
   format: 'webmark';
@@ -82,6 +83,14 @@ const textMap: Check<Json> = {
   expected: 'an object of text values',
 };
 const object: Check<Json> = { test: isRecord, expected: 'an object' };
+const count: Check<number> = {
+  test: (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0,
+  expected: 'a whole number of 0 or more',
+};
+const testIdName: Check<string> = {
+  test: (v): v is string => typeof v === 'string' && (TEST_ID_ATTRIBUTES as readonly string[]).includes(v),
+  expected: `one of ${TEST_ID_ATTRIBUTES.join(', ')}`,
+};
 const status: Check<NoteStatus> = {
   test: (v): v is NoteStatus => v === 'open' || v === 'resolved',
   expected: "'open' or 'resolved'",
@@ -123,6 +132,23 @@ function parseViewport(raw: Json | undefined, ctx: Ctx): ElementAnchor['viewport
   };
 }
 
+/** The look-alike context of an anchor (see AnchorItem); absent on older anchors. */
+function parseItem(raw: Json | undefined, ctx: Ctx): AnchorItem | undefined {
+  if (!raw) return undefined;
+  const item: AnchorItem = {
+    depth: required(raw, 'depth', count, ctx),
+    text: required(raw, 'text', text, ctx),
+    length: required(raw, 'length', count, ctx),
+    shapeUnique: required(raw, 'shapeUnique', boolean, ctx),
+  };
+  const testId = optional(raw, 'testId', object, ctx);
+  if (testId) {
+    const idCtx = nested(ctx, 'testId');
+    item.testId = { name: required(testId, 'name', testIdName, idCtx), value: required(testId, 'value', text, idCtx) };
+  }
+  return item;
+}
+
 function parseAnchor(raw: Json, ctx: Ctx): ElementAnchor {
   const anchor: ElementAnchor = {
     selector: required(raw, 'selector', text, ctx),
@@ -139,6 +165,16 @@ function parseAnchor(raw: Json, ctx: Ctx): ElementAnchor {
   };
   const id = optional(raw, 'id', text, ctx);
   if (id) anchor.id = id;
+  // Look-alike data (added later): keep it, or restored notes fall back to the
+  // weaker rules for old anchors and notes on repeated controls get orphaned.
+  const lookAlikes = optional(raw, 'lookAlikes', count, ctx);
+  if (lookAlikes !== undefined) anchor.lookAlikes = lookAlikes;
+  const shapeUnique = optional(raw, 'shapeUnique', boolean, ctx);
+  if (shapeUnique !== undefined) anchor.shapeUnique = shapeUnique;
+  const uniqueHooks = optional(raw, 'uniqueHooks', textList, ctx);
+  if (uniqueHooks) anchor.uniqueHooks = [...uniqueHooks];
+  const item = parseItem(optional(raw, 'item', object, ctx), nested(ctx, 'item'));
+  if (item) anchor.item = item;
   return anchor;
 }
 

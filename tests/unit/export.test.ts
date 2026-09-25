@@ -123,6 +123,26 @@ describe('parseExportBundle', () => {
     expect(parsed).toEqual(bundle);
   });
 
+  it('keeps the look-alike data that tells repeated controls apart', () => {
+    const lookAlike = {
+      lookAlikes: 2,
+      shapeUnique: false,
+      uniqueHooks: ['data-testid'],
+      item: { depth: 2, text: 'red hat $20 add to cart', length: 23, shapeUnique: true, testId: { name: 'data-testid', value: 'card-7' } },
+    };
+    const parsed = parseExportBundle(bundleJson({ notes: [rawNote({ anchor: rawAnchor(lookAlike) })] }));
+
+    expect(parsed.notes[0]?.anchor).toMatchObject(lookAlike);
+  });
+
+  it.each([
+    ['a negative look-alike count', { lookAlikes: -1 }, "'anchor.lookAlikes'"],
+    ['an item without its text', { item: { depth: 1, length: 3, shapeUnique: true } }, "'anchor.item.text'"],
+    ['an item test id on an unknown attribute', { item: { depth: 1, text: 'a', length: 1, shapeUnique: true, testId: { name: 'onclick', value: 'x' } } }, "'anchor.item.testId.name'"],
+  ])('rejects %s', (_, patch, field) => {
+    expect(() => parseExportBundle(bundleJson({ notes: [rawNote({ anchor: rawAnchor(patch) })] }))).toThrow(field);
+  });
+
   it('fills optional fields with defaults', () => {
     const minimalAnchor = { selector: 'p', xpath: '/html/body/p', tagName: 'p' };
     const note = rawNote({ anchor: minimalAnchor }, ['author', 'hasScreenshot', 'schemaVersion']);
