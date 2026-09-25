@@ -1,3 +1,5 @@
+// Must stay the first import: it runs before React DOM loads (see the file).
+import { isHtmlDocument } from './xmlDocumentGuard';
 import { createRoot, type Root } from 'react-dom/client';
 import { browser } from 'wxt/browser';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
@@ -183,8 +185,8 @@ export default defineContentScript({
 
   async main(ctx) {
     if (window.top !== window) return;
-    // SVG/XML documents can't host a custom-element shadow root.
-    if (!(document.documentElement instanceof HTMLElement)) return;
+    // SVG/XML documents (feeds, Chrome's XML viewer) can't host a custom-element shadow root.
+    if (!isHtmlDocument(document) || !(document.documentElement instanceof HTMLElement)) return;
     if (!claimPage(ctx)) return;
     ignoreRestartAnnouncements(ctx);
 

@@ -310,11 +310,7 @@ test.describe('background: context menu and "Open on page"', () => {
     expect(await page.evaluate(() => (window as unknown as { __marker?: string }).__marker)).toBe('still here');
     expect(context.pages()).toHaveLength(tabs);
     await expect(options.getByText("Couldn't show this note on its page")).toBeHidden();
-
-    // Known and unrelated: React DOM throws while loading in an XML document (its vendor-prefix
-    // check reads document.createElement('div').style, which XML elements lack), so the content
-    // script logs a page error there each time it loads.
-    const onXmlPage = (error: string) => error.includes(`on ${url}:`) && error.includes("search for 'animation'");
-    errorLog.errors.splice(0, errorLog.errors.length, ...errorLog.errors.filter((error) => !onXmlPage(error)));
+    // Loading into an XML document must not log errors (React DOM used to throw there).
+    expect(errorLog.errors.filter((error) => error.includes(url))).toEqual([]);
   });
 });
