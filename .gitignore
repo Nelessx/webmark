@@ -8,3 +8,6 @@ stats.html
 web-ext.config.ts
 test-results
 playwright-report
+
+# Agent worktrees
+.claude/worktrees/

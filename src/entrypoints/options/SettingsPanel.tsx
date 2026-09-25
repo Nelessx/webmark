@@ -4,7 +4,7 @@ import { Switch } from '@/components/Switch';
 import { DEFAULT_SHORTCUTS } from '@/lib/constants';
 
 export function SettingsPanel() {
-  const [settings, update, loading] = useSettings();
+  const [settings, update, ready] = useSettings();
   const [author, setAuthor] = useState(settings.authorName);
 
   // Sync the draft once stored settings arrive (or change in another tab).
@@ -15,7 +15,8 @@ export function SettingsPanel() {
     if (name !== settings.authorName) void update({ authorName: name });
   }
 
-  if (loading) return null;
+  // Wait for the stored values so the switches never flash the defaults.
+  if (!ready) return null;
 
   return (
     <section className="wm-allnotes__settings" aria-label="Settings">

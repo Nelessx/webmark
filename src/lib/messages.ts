@@ -149,7 +149,8 @@ type Sender = Browser.runtime.MessageSender;
 /**
  * Register a handler for one family of messages. The handler may be async; its
  * result is sent back as the response. Messages the guard rejects are left for
- * other listeners. Returns an unsubscribe function.
+ * other listeners. Returns an unsubscribe function, which is also safe to call
+ * from a content script that an extension update orphaned.
  */
 export function listen<M>(
   guard: (value: unknown) => value is M,
@@ -167,5 +168,7 @@ export function listen<M>(
     return true;
   };
   browser.runtime.onMessage.addListener(listener);
-  return () => browser.runtime.onMessage.removeListener(listener);
+  // `runtime` is gone once an extension update orphans a content script, which
+  // is exactly when its cleanup runs; a dead listener has nothing to remove.
+  return () => browser.runtime?.onMessage.removeListener(listener);
 }

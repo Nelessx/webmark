@@ -121,7 +121,7 @@ A single CSS selector breaks as soon as a page is redeployed with new class hash
 | `npm run test:watch` | Unit tests in watch mode |
 | `npm run compile` | Type-check (`tsc --noEmit`) |
 | `npm run icons` | Regenerate `public/icon/*.png` (`scripts/generate-icons.mjs`, no dependencies) |
-| `npm run test:e2e` | End-to-end tests with Playwright (planned, not added yet) |
+| `npm run test:e2e` | End-to-end tests (`tests/e2e/**`): builds with `wxt build --mode e2e` (the in-page UI uses an open shadow root only in that mode) into `.output/chrome-mv3-e2e`, then runs Playwright against it in headless Chromium. Needs `npx playwright install chromium` once; `HEADED=1` shows the browser |
 
 ## Known limitations
 

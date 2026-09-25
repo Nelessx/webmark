@@ -102,12 +102,16 @@ export function Editor({ session }: { session: EditorSession }) {
   const save = async () => {
     if (!canSave) return;
     setSaving(true);
-    const ok = await actions.saveEditor({
-      label: values.label.trim() || session.label,
-      body: values.body.trim(),
-      tags: parseTags(values.tags),
-      status: values.status,
-    });
+    const edited = (Object.keys(initial) as (keyof FormValues)[]).filter((key) => values[key] !== initial[key]);
+    const ok = await actions.saveEditor(
+      {
+        label: values.label.trim() || session.label,
+        body: values.body.trim(),
+        tags: parseTags(values.tags),
+        status: values.status,
+      },
+      edited,
+    );
     // On success the editor unmounts; on failure let the user retry.
     if (!ok) setSaving(false);
   };

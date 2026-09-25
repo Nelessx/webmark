@@ -35,10 +35,20 @@ function row(label: string): Element {
   return name.parentElement;
 }
 
-function timed<T>(fn: () => T): { value: T; ms: number } {
-  const start = performance.now();
-  const value = fn();
-  return { value, ms: performance.now() - start };
+/**
+ * Best of `runs` timings. One run swings with JIT warm-up, GC and whatever
+ * else the machine is doing; a real slowdown shows up in every run.
+ * resolveAnchor only reads the DOM, so the runs are identical.
+ */
+function timed<T>(fn: () => T, runs = 3): { value: T; ms: number } {
+  let result: { value: T; ms: number } | undefined;
+  for (let i = 0; i < runs; i++) {
+    const start = performance.now();
+    const value = fn();
+    const ms = performance.now() - start;
+    if (!result || ms < result.ms) result = { value, ms };
+  }
+  return result!;
 }
 
 const groups = Array.from({ length: GROUPS }, (_, i) => i + 1);

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Product page</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 0; padding: 24px; font: 15px/1.5 Arial, Helvetica, sans-serif; color: #1d1d27; background: #f4f5f9; }
+      h1 { margin: 0 0 16px; font-size: 24px; }
+      acme-rating { margin-bottom: 20px; }
+      iframe { display: block; border: 1px solid #e2e4ee; border-radius: 10px; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Page content WebMark can't look inside: a web component with an open
+      shadow root, and a same-origin iframe. window.__frameClicks counts clicks
+      on the button inside the frame.
+    -->
+    <h1>Espresso grinder</h1>
+    <acme-rating id="rating"></acme-rating>
+    <iframe
+      id="reviews"
+      title="Reviews"
+      width="420"
+      height="150"
+      srcdoc="<!doctype html><body style='margin:0;padding:12px;font:14px Arial'><button id='helpful' onclick='parent.__frameClicks++'>Helpful</button><p>Great grinder, a bit loud.</p></body>"
+    ></iframe>
+    <p>Free shipping on orders over $50.</p>
+    <script>
+      window.__frameClicks = 0;
+      customElements.define(
+        'acme-rating',
+        class extends HTMLElement {
+          constructor() {
+            super();
+            const root = this.attachShadow({ mode: 'open' });
+            root.innerHTML =
+              '<style>:host { display: inline-flex; gap: 8px; padding: 8px 12px; background: #fff; border: 1px solid #e2e4ee; border-radius: 8px; }</style>' +
+              '<span class="stars">★★★★☆</span><span class="label">4.0 out of 5</span>';
+          }
+        },
+      );
+    </script>
+  </body>
+</html>

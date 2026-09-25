@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Acme Analytics · Dashboard</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <script>
+      /*
+       * A small analytics dashboard for the WebMark E2E suite.
+       *
+       * localStorage.variant simulates live data and redeploys of the same URL
+       * (so the page key stays the same):
+       *   (unset)   six KPI cards with readable class names
+       *   live      the Revenue value changed
+       *   shifted   a "Profit" card is inserted first, every class name becomes a
+       *             CSS-in-JS style hash, and the Users value changed
+       *   removed   the Revenue card is gone
+       *
+       * Test hooks: window.__clicks (Details buttons), window.__clickLog,
+       * window.__pageKeys (keydowns seen by the page on document),
+       * window.__submits (form submissions), window.__swapBody() (re-render
+       * into a brand-new <body>, the way Turbo / pjax navigations do).
+       */
+      (function () {
+        'use strict';
+        var variant = localStorage.getItem('variant') || 'base';
+        var hashed = variant === 'shifted';
+
+        window.__variant = variant;
+        window.__clicks = 0;
+        window.__clickLog = [];
+        window.__pageKeys = 0;
+        window.__submits = 0;
+        document.addEventListener('keydown', function () {
+          window.__pageKeys++;
+        });
+
+        // Readable class names, or emotion-style hashes ("css-" + 7 chars) after the redeploy.
+        var names = [
+          'topbar', 'brand', 'nav', 'page', 'kpis', 'grid', 'card', 'card-title', 'card-value', 'card-button',
+          'filters', 'field', 'orders', 'rows', 'row', 'row-id', 'row-customer', 'row-amount', 'row-status',
+        ];
+        var cls = {};
+        names.forEach(function (name) {
+          var h = 5381;
+          for (var i = 0; i < name.length; i++) h = ((h * 33) ^ name.charCodeAt(i)) >>> 0;
+          cls[name] = hashed ? 'css-' + (h.toString(36) + 'q7x2k9a').slice(0, 7) : name;
+        });
+
+        var style = document.createElement('style');
+        style.textContent = [
+          'body { margin: 0; font: 15px/1.5 Arial, Helvetica, sans-serif; color: #1d1d27; background: #f4f5f9; }',
+          '.' + cls.topbar + ' { display: flex; align-items: center; gap: 32px; height: 52px; padding: 0 24px; background: #fff; border-bottom: 1px solid #e2e4ee; }',
+          '.' + cls.brand + ' { font-weight: 700; }',
+          '.' + cls.nav + ' a { margin-right: 18px; color: #3b3fd8; text-decoration: none; }',
+          '.' + cls.page + ' { max-width: 1100px; margin: 0 auto; padding: 8px 24px 40px; }',
+          'h1 { margin: 12px 0; font-size: 26px; } h2 { margin: 18px 0 10px; font-size: 18px; }',
+          '.' + cls.grid + ' { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }',
+          '.' + cls.card + ' { padding: 14px 16px; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }',
+          '.' + cls['card-title'] + ' { margin: 0; font-size: 14px; color: #5d6075; }',
+          '.' + cls['card-value'] + ' { margin: 4px 0 10px; font-size: 28px; font-weight: 700; }',
+          '.' + cls['card-button'] + ' { padding: 5px 12px; border: 1px solid #c9cbe0; border-radius: 6px; background: #fff; cursor: pointer; }',
+          '.' + cls.filters + ' { display: flex; gap: 16px; align-items: end; margin-top: 20px; padding: 12px 16px; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }',
+          '.' + cls.field + ' { display: flex; flex-direction: column; font-size: 13px; color: #5d6075; }',
+          '.' + cls.rows + ' { margin: 0; padding: 0; list-style: none; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }',
+          '.' + cls.row + ' { display: grid; grid-template-columns: 120px 1fr 110px 90px; padding: 7px 16px; border-top: 1px solid #eef0f6; }',
+          '.' + cls.row + ':first-child { border-top: 0; }',
+          '.' + cls['row-amount'] + ' { text-align: right; }',
+          '.' + cls['row-status'] + ' { text-align: right; color: #2f8a55; }',
+        ].join('\n');
+        document.head.append(style);
+
+        var cards = [
+          { title: 'Revenue', value: '$12,340' },
+          { title: 'Users', value: '1,024' },
+          { title: 'Orders', value: '342' },
+          { title: 'Refunds', value: '12' },
+          { title: 'Sessions', value: '8,210' },
+          { title: 'Churn', value: '2.1%' },
+        ];
+        if (variant === 'live') cards[0].value = '$12,810';
+        if (variant === 'shifted') {
+          cards[1].value = '1,031';
+          cards.unshift({ title: 'Profit', value: '$4,410' });
+        }
+        if (variant === 'removed') {
+          cards = cards.filter(function (card) {
+            return card.title !== 'Revenue';
+          });
+        }
+
+        function el(tag, className, children) {
+          var node = document.createElement(tag);
+          if (className) node.className = className;
+          (children || []).forEach(function (child) {
+            node.append(child);
+          });
+          return node;
+        }
+
+        function header() {
+          var nav = el('nav', cls.nav);
+          ['Overview', 'Reports', 'Customers', 'Settings'].forEach(function (label) {
+            var link = el('a', '', [label]);
+            link.href = '#' + label.toLowerCase();
+            nav.append(link);
+          });
+          return el('header', cls.topbar, [el('span', cls.brand, ['Acme Analytics']), nav]);
+        }
+
+        function kpis() {
+          var grid = el('div', cls.grid);
+          cards.forEach(function (card) {
+            var button = el('button', cls['card-button'], ['Details']);
+            button.type = 'button';
+            button.addEventListener('click', function () {
+              window.__clicks++;
+              window.__clickLog.push(card.title);
+            });
+            grid.append(
+              el('div', cls.card, [
+                el('h3', cls['card-title'], [card.title]),
+                el('p', cls['card-value'], [card.value]),
+                button,
+              ]),
+            );
+          });
+          return el('section', cls.kpis, [el('h2', '', ['Key metrics']), grid]);
+        }
+
+        function filters() {
+          var search = el('input');
+          search.type = 'search';
+          search.name = 'q';
+          search.placeholder = 'Search orders';
+          var select = el('select');
+          select.name = 'status';
+          ['All', 'Paid', 'Refunded'].forEach(function (label) {
+            select.append(el('option', '', [label]));
+          });
+          var apply = el('button', '', ['Apply']);
+          apply.type = 'submit';
+          var form = el('form', cls.filters, [
+            el('label', cls.field, ['Search', search]),
+            el('label', cls.field, ['Status', select]),
+            apply,
+          ]);
+          form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            window.__submits++;
+          });
+          return form;
+        }
+
+        // Twenty look-alike order rows.
+        function orders() {
+          var rows = el('ul', cls.rows);
+          for (var n = 1; n <= 20; n++) {
+            rows.append(
+              el('li', cls.row, [
+                el('span', cls['row-id'], ['ORD-' + (1000 + n)]),
+                el('span', cls['row-customer'], ['Customer ' + n]),
+                el('span', cls['row-amount'], ['$' + (n * 10).toFixed(2)]),
+                el('span', cls['row-status'], [n % 5 === 0 ? 'Refunded' : 'Paid']),
+              ]),
+            );
+          }
+          return el('section', cls.orders, [el('h2', '', ['Recent orders']), rows]);
+        }
+
+        function render(body) {
+          body.append(header(), el('main', cls.page, [el('h1', '', ['Dashboard']), kpis(), filters(), orders()]));
+        }
+
+        render(document.body);
+        window.__swapBody = function () {
+          var body = document.createElement('body');
+          render(body);
+          document.body.replaceWith(body);
+        };
+      })();
+    </script>
+  </body>
+</html>

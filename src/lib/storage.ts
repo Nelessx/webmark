@@ -280,7 +280,9 @@ export function onNotesChanged(callback: (changes: NotesChange[]) => void): () =
     if (noteChanges.length) callback(noteChanges);
   };
   browser.storage.onChanged.addListener(listener);
-  return () => browser.storage.onChanged.removeListener(listener);
+  // `storage` is gone once an extension update orphans a content script, which
+  // is exactly when its cleanup unsubscribes; a dead listener has nothing to remove.
+  return () => browser.storage?.onChanged.removeListener(listener);
 }
 
 export function onSettingsChanged(callback: (settings: Settings) => void): () => void {
@@ -289,5 +291,5 @@ export function onSettingsChanged(callback: (settings: Settings) => void): () =>
     callback({ ...DEFAULT_SETTINGS, ...((changes[KEY_SETTINGS].newValue as Partial<Settings> | undefined) ?? {}) });
   };
   browser.storage.onChanged.addListener(listener);
-  return () => browser.storage.onChanged.removeListener(listener);
+  return () => browser.storage?.onChanged.removeListener(listener);
 }

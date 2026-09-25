@@ -2,7 +2,7 @@ import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { buildLabel, createAnchor, describeElement } from '@/lib/anchor';
 import { noteToMarkdown } from '@/lib/format';
 import { createNoteId, deleteNote, saveNote, saveScreenshot, updateNote } from '@/lib/storage';
-import { NOTE_SCHEMA_VERSION, type ElementAnchor, type Note, type NoteStatus } from '@/lib/types';
+import { NOTE_SCHEMA_VERSION, type ElementAnchor, type Note, type NotePatch, type NoteStatus } from '@/lib/types';
 import { getPageKey } from '@/lib/url';
 import { captureElement } from './capture';
 import { copyText } from './clipboard';
@@ -17,6 +17,9 @@ export interface EditorDraft {
   tags: string[];
   status: NoteStatus;
 }
+
+/** The draft fields the user changed in this editor session. */
+export type EditedFields = readonly (keyof EditorDraft)[];
 
 export interface EditorDeps {
   ctx: ContentScriptContext;
@@ -162,7 +165,8 @@ export class EditorController {
     if (restoreFocus) restorePageFocus(editor.returnFocus);
   }
 
-  async save(draft: EditorDraft): Promise<boolean> {
+  /** Create the note, or write the `edited` fields of an existing one. */
+  async save(draft: EditorDraft, edited: EditedFields): Promise<boolean> {
     const { store, toaster } = this.deps;
     const session = store.get().editor;
     if (!session || !draft.body.trim()) return false;
@@ -171,8 +175,15 @@ export class EditorController {
         await this.createNote(session, draft);
       } else if (session.noteId) {
         const pageKey = findNote(store.get(), session.noteId)?.pageKey ?? store.get().pageKey;
-        const { label, body, tags, status } = draft;
-        const updated = await updateNote(pageKey, session.noteId, { label, body, tags, status });
+        // Only what was edited here: the other fields may have changed elsewhere
+        // while the editor was open (e.g. resolved from the dashboard) and must
+        // not be overwritten with the values the editor opened with.
+        const patch: NotePatch = {};
+        if (edited.includes('label')) patch.label = draft.label;
+        if (edited.includes('body')) patch.body = draft.body;
+        if (edited.includes('tags')) patch.tags = draft.tags;
+        if (edited.includes('status')) patch.status = draft.status;
+        const updated = await updateNote(pageKey, session.noteId, patch);
         if (!updated) {
           toaster.show('This note no longer exists', 'error');
           this.closeSession(session.id);

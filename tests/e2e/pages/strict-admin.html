@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Admin console</title>
+    <!-- Served with a strict Content-Security-Policy (see STRICT_CSP in fixtures.ts): no inline code, no data: images. -->
+    <link rel="stylesheet" href="/strict-admin.css" />
+  </head>
+  <body>
+    <header class="bar"><h1>Admin console</h1></header>
+    <main class="panels">
+      <section class="panel" aria-labelledby="billing-title">
+        <h2 id="billing-title">Billing</h2>
+        <p class="amount">$1,200 due</p>
+        <button type="button">Pay now</button>
+      </section>
+      <section class="panel" aria-labelledby="security-title">
+        <h2 id="security-title">Security</h2>
+        <p class="amount">2FA enabled</p>
+        <button type="button">Manage</button>
+      </section>
+    </main>
+  </body>
+</html>

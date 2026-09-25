@@ -14,7 +14,7 @@ import type { Note } from '@/lib/types';
 import { getPageKey } from '@/lib/url';
 import { ContextMenuTracker } from './contextMenu';
 import { Timers } from './dom';
-import { EditorController, type EditorDraft } from './editorController';
+import { EditorController, type EditedFields, type EditorDraft } from './editorController';
 import type { LayoutTracker } from './layout';
 import { PageNotes, waitForElement } from './pageNotes';
 import { computePageState, reportPageStateChanges } from './pageState';
@@ -24,7 +24,8 @@ import { Toaster } from './toasts';
 
 /** What the React components may do. */
 export interface UiActions {
-  saveEditor(draft: EditorDraft): Promise<boolean>;
+  /** `edited`: the fields the user changed; an edit writes only those. */
+  saveEditor(draft: EditorDraft, edited: EditedFields): Promise<boolean>;
   cancelEditor(): void;
   setEditorDirty(dirty: boolean): void;
   deleteNote(noteId: string): Promise<void>;
@@ -198,7 +199,7 @@ export class Controller implements UiActions {
 
   // --- UiActions ------------------------------------------------------------
 
-  readonly saveEditor = (draft: EditorDraft) => this.editor.save(draft);
+  readonly saveEditor = (draft: EditorDraft, edited: EditedFields) => this.editor.save(draft, edited);
   readonly cancelEditor = () => this.editor.close();
   readonly setEditorDirty = (dirty: boolean) => this.editor.setDirty(dirty);
   readonly deleteNote = (noteId: string) => this.editor.remove(noteId);

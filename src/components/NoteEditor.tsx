@@ -7,7 +7,7 @@ import { Kbd } from './Kbd';
 
 export interface NoteEditorProps {
   note: Note;
-  /** Receives only the fields that changed. Reject to keep the editor open. */
+  /** Receives only the fields the user changed in this form. Reject to keep the editor open. */
   onSave: (patch: NotePatch) => Promise<void>;
   onCancel: () => void;
 }
@@ -26,9 +26,13 @@ function safeParseTags(input: string, fallback: string[]): string[] {
 
 /** Inline edit form for a note: label, body, tags. Ctrl/Cmd+Enter saves, Esc cancels. */
 export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
-  const [label, setLabel] = useState(note.label);
-  const [body, setBody] = useState(note.body);
-  const [tags, setTags] = useState(note.tags.join(', '));
+  // Changes are measured against the note as the form opened with it, not the
+  // live `note`: if the note is edited elsewhere meanwhile (say, on the page),
+  // fields untouched here must not be written back with their old values.
+  const [initial] = useState(() => ({ label: note.label, body: note.body, tags: note.tags }));
+  const [label, setLabel] = useState(initial.label);
+  const [body, setBody] = useState(initial.body);
+  const [tags, setTags] = useState(initial.tags.join(', '));
   const [saving, setSaving] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const id = useId();
@@ -51,12 +55,12 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
   const save = async () => {
     if (saving) return;
     const patch: NotePatch = {};
-    const nextLabel = label.trim() || note.label;
-    if (nextLabel !== note.label) patch.label = nextLabel;
+    const nextLabel = label.trim() || initial.label;
+    if (nextLabel !== initial.label) patch.label = nextLabel;
     const nextBody = body.trim();
-    if (nextBody !== note.body) patch.body = nextBody;
-    const nextTags = safeParseTags(tags, note.tags);
-    if (!sameTags(nextTags, note.tags)) patch.tags = nextTags;
+    if (nextBody !== initial.body) patch.body = nextBody;
+    const nextTags = safeParseTags(tags, initial.tags);
+    if (!sameTags(nextTags, initial.tags)) patch.tags = nextTags;
     if (!Object.keys(patch).length) {
       onCancel();
       return;

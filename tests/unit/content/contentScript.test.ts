@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
 import { ContentScriptContext } from 'wxt/utils/content-script-context';
 import type { ContentMessage, PageState } from '@/lib/messages';
-import { deleteNote, getNotesForPage, getScreenshot, getSettings, saveNote } from '@/lib/storage';
+import { deleteNote, getNotesForPage, getScreenshot, getSettings, saveNote, updateNote } from '@/lib/storage';
 import { NOTE_SCHEMA_VERSION, type ElementAnchor, type Note } from '@/lib/types';
 import { getPageKey } from '@/lib/url';
 
@@ -259,6 +259,27 @@ describe('content script', () => {
     await vi.waitFor(() => expect(($('[data-wm-save]') as HTMLButtonElement).disabled).toBe(false));
     ($('[data-wm-save]') as HTMLButtonElement).click();
     await vi.waitFor(async () => expect((await getNotesForPage(pageKey()))[0]?.status).toBe('resolved'));
+  });
+
+  it('saving an edit keeps changes made elsewhere while the editor was open', async () => {
+    await saveNote({ ...makeNote('n1', '#card-a', 1), tags: ['data'] });
+    await startContentScript();
+    expect(await send({ type: 'wm:focus-note', noteId: 'n1' })).toEqual({ found: true });
+    await vi.waitFor(() => expect($('[data-wm-editor="edit"]')).not.toBeNull());
+
+    // Meanwhile the dashboard resolves and re-tags the note.
+    await updateNote(pageKey(), 'n1', { status: 'resolved', tags: ['data', 'ux'] });
+    await vi.waitFor(() => expect($('[data-wm-editor="edit"]')).not.toBeNull());
+
+    // Only the text is edited here.
+    typeInto($('[data-wm-editor] textarea') as HTMLTextAreaElement, 'Edited in the page');
+    ($('[data-wm-save]') as HTMLButtonElement).click();
+    await vi.waitFor(async () => expect((await getNotesForPage(pageKey()))[0]?.body).toBe('Edited in the page'));
+    expect((await getNotesForPage(pageKey()))[0]).toMatchObject({
+      label: 'Label n1',
+      status: 'resolved',
+      tags: ['data', 'ux'],
+    });
   });
 
   it('shows an orphaned note in the floating card', async () => {

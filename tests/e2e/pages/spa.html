@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Workspace</title>
+    <link rel="icon" href="data:," />
+    <style>
+      body { margin: 0; font: 15px/1.5 Arial, Helvetica, sans-serif; color: #1d1d27; background: #f4f5f9; }
+      .shell-header { display: flex; align-items: center; gap: 32px; height: 52px; padding: 0 24px; background: #fff; border-bottom: 1px solid #e2e4ee; }
+      .shell-title { font-weight: 700; }
+      .shell-nav a { margin-right: 18px; color: #3b3fd8; text-decoration: none; }
+      .view { max-width: 900px; margin: 0 auto; padding: 8px 24px 40px; }
+      .items { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .item { padding: 14px 16px; background: #fff; border: 1px solid #e2e4ee; border-radius: 10px; }
+      .item h3 { margin: 0 0 6px; }
+      .item p { margin: 0; color: #5d6075; }
+    </style>
+  </head>
+  <body>
+    <header class="shell-header">
+      <span class="shell-title">Northwind Workspace</span>
+      <nav class="shell-nav">
+        <a href="/spa.html" data-route="">Projects</a>
+        <a href="/spa.html?view=team" data-route="team">Team</a>
+      </nav>
+    </header>
+    <main id="app" class="view"></main>
+    <script>
+      /*
+       * Client-side routing with history.pushState: "/spa.html" shows projects,
+       * "/spa.html?view=team" shows people. The header stays mounted across
+       * routes; the view content is re-rendered. window.__renders counts renders.
+       */
+      (function () {
+        'use strict';
+        var views = {
+          projects: {
+            title: 'Projects',
+            items: [
+              ['Apollo', 'Launch plan for the autumn release'],
+              ['Borealis', 'Data pipeline rewrite'],
+              ['Cygnus', 'Mobile app redesign'],
+            ],
+          },
+          team: {
+            title: 'Team',
+            items: [
+              ['Dana Whitfield', 'Engineering manager'],
+              ['Eli Moreno', 'Product designer'],
+              ['Farah Okafor', 'Product manager'],
+            ],
+          },
+        };
+        window.__renders = 0;
+
+        function render() {
+          var name = new URLSearchParams(location.search).get('view') === 'team' ? 'team' : 'projects';
+          var view = views[name];
+          var app = document.getElementById('app');
+          var heading = document.createElement('h1');
+          heading.textContent = view.title;
+          var list = document.createElement('div');
+          list.className = 'items';
+          view.items.forEach(function (item) {
+            var card = document.createElement('article');
+            card.className = 'item';
+            var title = document.createElement('h3');
+            title.textContent = item[0];
+            var text = document.createElement('p');
+            text.textContent = item[1];
+            card.append(title, text);
+            list.append(card);
+          });
+          app.replaceChildren(heading, list);
+          document.title = view.title + ' · Workspace';
+          window.__renders++;
+        }
+
+        document.addEventListener('click', function (event) {
+          var link = event.target instanceof Element ? event.target.closest('a[data-route]') : null;
+          if (!link) return;
+          event.preventDefault();
+          history.pushState(null, '', link.getAttribute('href'));
+          render();
+        });
+        window.addEventListener('popstate', render);
+        render();
+      })();
+    </script>
+  </body>
+</html>
