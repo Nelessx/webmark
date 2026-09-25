@@ -1,7 +1,16 @@
-/** Bump when the stored Note shape changes, and add a migration in storage.ts. */
-export const NOTE_SCHEMA_VERSION = 1;
+/**
+ * Bump when the stored Note shape changes, and add a migration in storage.ts.
+ * 2: four statuses (the old 'resolved' is 'completed') and a priority.
+ */
+export const NOTE_SCHEMA_VERSION = 2;
 
-export type NoteStatus = 'open' | 'resolved';
+/**
+ * Workflow of a note. 'archived' notes are put away: no pin on the page and
+ * left out of the default lists. Labels and helpers live in noteMeta.ts.
+ */
+export type NoteStatus = 'open' | 'in_progress' | 'completed' | 'archived';
+
+export type NotePriority = 'low' | 'medium' | 'high';
 
 /** A rectangle in document coordinates (viewport rect + scroll offset at capture time). */
 export interface DocRect {
@@ -85,6 +94,7 @@ export interface Note {
   label: string;
   body: string;
   status: NoteStatus;
+  priority: NotePriority;
   tags: string[];
   /** Who wrote the note (from settings.authorName). Empty string if unset. */
   author: string;
@@ -96,7 +106,9 @@ export interface Note {
 }
 
 /** Fields a caller may change on an existing note. */
-export type NotePatch = Partial<Pick<Note, 'label' | 'body' | 'status' | 'tags' | 'anchor' | 'hasScreenshot'>>;
+export type NotePatch = Partial<
+  Pick<Note, 'label' | 'body' | 'status' | 'priority' | 'tags' | 'anchor' | 'hasScreenshot'>
+>;
 
 export interface Settings {
   /** Show numbered pins on annotated elements when a page loads. */

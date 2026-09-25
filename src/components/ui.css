@@ -5,7 +5,9 @@
  *
  * Class conventions: every class is prefixed "wm-"; blocks and elements use
  * BEM (wm-note-card, wm-note-card__foot, wm-btn--primary); states use "is-*"
- * (is-resolved, is-selected) or ARIA attributes (aria-pressed, aria-checked).
+ * (is-selected, is-editing) or ARIA attributes (aria-pressed, aria-checked).
+ * A note's status and priority are data attributes (data-status="in_progress",
+ * data-priority="high"), which set --wm-status-color / --wm-priority-color.
  */
 @import '../assets/theme.css';
 
@@ -634,6 +636,12 @@ body {
   outline-offset: 0;
 }
 
+.wm-segmented__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .wm-segmented__count {
   min-width: 16px;
   font-size: 11px;
@@ -641,46 +649,257 @@ body {
   color: var(--wm-text-muted);
 }
 
+/* Chips: separate pills that wrap, for narrow places. */
+
+.wm-segmented--chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.wm-segmented--chips .wm-segmented__item {
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--wm-border);
+  border-radius: 999px;
+  background: var(--wm-surface);
+  font-size: 12px;
+}
+
+.wm-segmented--chips .wm-segmented__label {
+  gap: 5px;
+}
+
+.wm-segmented--chips .wm-segmented__item:hover {
+  border-color: var(--wm-border-strong);
+}
+
+.wm-segmented--chips .wm-segmented__item[aria-checked='true'] {
+  border-color: transparent;
+  background: var(--wm-accent-soft);
+  color: var(--wm-accent);
+  box-shadow: none;
+}
+
+.wm-segmented--chips .wm-segmented__item[aria-checked='true'] .wm-segmented__count {
+  color: inherit;
+}
+
+.wm-segmented--chips .wm-segmented__count {
+  min-width: 0;
+}
+
 /* ------------------------------------------------------------------------ */
-/* Status badge                                                             */
+/* Status and priority                                                      */
 /* ------------------------------------------------------------------------ */
+
+[data-status='open'] {
+  --wm-status-color: var(--wm-status-open);
+}
+
+[data-status='in_progress'] {
+  --wm-status-color: var(--wm-status-in-progress);
+}
+
+[data-status='completed'] {
+  --wm-status-color: var(--wm-status-completed);
+}
+
+[data-status='archived'] {
+  --wm-status-color: var(--wm-status-archived);
+}
+
+[data-status='missing'] {
+  --wm-status-color: var(--wm-warning);
+}
+
+[data-priority='high'] {
+  --wm-priority-color: var(--wm-priority-high);
+}
+
+[data-priority='medium'] {
+  --wm-priority-color: var(--wm-priority-medium);
+}
+
+[data-priority='low'] {
+  --wm-priority-color: var(--wm-priority-low);
+}
+
+/* Status: a tinted pill with a coloured dot. */
 
 .wm-status {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   flex: none;
-  height: 20px;
-  padding: 0 7px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  background: var(--wm-surface-2);
-  color: var(--wm-text-muted);
+  background: color-mix(in srgb, var(--wm-status-color, var(--wm-status-open)) 12%, var(--wm-surface));
+  color: var(--wm-text);
 }
 
 .wm-status::before {
   content: '';
-  width: 6px;
-  height: 6px;
+  flex: none;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--wm-status-color, var(--wm-status-open));
 }
 
-.wm-status--open::before {
-  background: var(--wm-pin-open);
+.wm-dot {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wm-status-color, var(--wm-status-open));
 }
 
-.wm-status--resolved {
-  background: var(--wm-success-soft);
-  color: var(--wm-success);
+/* Priority: an outlined chip with signal bars, never mistaken for a status. */
+
+.wm-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius-sm);
+  background: var(--wm-surface);
+  color: var(--wm-text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.wm-status--missing {
-  background: color-mix(in srgb, var(--wm-warning) 14%, transparent);
-  color: var(--wm-warning);
+.wm-priority-icon {
+  display: block;
+  flex: none;
+}
+
+.wm-priority .wm-priority-icon,
+.wm-priority-mark {
+  color: var(--wm-priority-color, var(--wm-priority-medium));
+}
+
+.wm-priority-mark {
+  display: inline-flex;
+  flex: none;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Menu button                                                              */
+/* ------------------------------------------------------------------------ */
+
+.wm-menu {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.wm-menu__button {
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.wm-menu__chevron {
+  margin-left: -1px;
+  opacity: 0.6;
+}
+
+.wm-menu__button.wm-status:hover:not(:disabled),
+.wm-menu__button.wm-status[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--wm-status-color, var(--wm-status-open)) 20%, var(--wm-surface));
+  border-color: color-mix(in srgb, var(--wm-status-color, var(--wm-status-open)) 35%, transparent);
+}
+
+.wm-menu__button.wm-priority:hover:not(:disabled),
+.wm-menu__button.wm-priority[aria-expanded='true'] {
+  border-color: var(--wm-border-strong);
+  color: var(--wm-text);
+}
+
+.wm-menu__button:disabled {
+  opacity: 0.5;
+}
+
+.wm-menu__list {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  max-width: calc(100vw - 16px);
+  padding: 4px;
+  border: 1px solid var(--wm-border);
+  border-radius: var(--wm-radius);
+  background: var(--wm-surface);
+  box-shadow: var(--wm-shadow-lg);
+  animation: wm-menu-in 0.1s ease-out;
+}
+
+.wm-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--wm-radius-sm);
+  background: transparent;
+  color: var(--wm-text);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wm-menu__item:hover,
+.wm-menu__item:focus-visible {
+  background: var(--wm-surface-2);
+  outline: none;
+}
+
+.wm-menu__item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--wm-accent);
+}
+
+.wm-menu__icon {
+  display: inline-flex;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+}
+
+.wm-menu__label {
+  flex: 1;
+}
+
+.wm-menu__check {
+  color: var(--wm-accent);
+}
+
+@keyframes wm-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
 }
 
 /* ------------------------------------------------------------------------ */
@@ -752,6 +971,7 @@ button.wm-tag[aria-pressed='true'] {
 
 .wm-pin {
   --wm-pin-size: 22px;
+  position: relative;
   display: inline-grid;
   place-items: center;
   flex: none;
@@ -782,12 +1002,45 @@ button.wm-tag[aria-pressed='true'] {
   font-size: 12px;
 }
 
-.wm-pin--resolved {
-  background: var(--wm-pin-resolved);
+.wm-pin[data-status='in_progress'] {
+  background: var(--wm-pin-in-progress);
 }
 
-.wm-pin--orphaned {
-  background: #8a8a99;
+.wm-pin[data-status='completed'] {
+  background: var(--wm-pin-completed);
+}
+
+/* Archived notes have no pin on the page: a hollow badge. */
+.wm-pin[data-status='archived'] {
+  background: var(--wm-surface);
+  color: var(--wm-status-archived);
+  box-shadow:
+    inset 0 0 0 1.5px var(--wm-status-archived),
+    0 0 0 2px var(--wm-surface),
+    0 1px 3px rgba(20, 20, 40, 0.2);
+}
+
+.wm-pin[data-orphaned] {
+  background: var(--wm-pin-orphaned);
+  color: #ffffff;
+}
+
+/* High priority: a red dot on the pin's corner, like on the page. */
+.wm-pin[data-priority='high']::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wm-pin-high);
+  box-shadow: 0 0 0 1.5px #ffffff;
+}
+
+.wm-pin--sm[data-priority='high']::after {
+  width: 7px;
+  height: 7px;
 }
 
 button.wm-pin {
@@ -1137,12 +1390,23 @@ button.wm-pin:focus-visible {
   margin-right: 6px;
 }
 
-.wm-note-card__status {
-  margin-top: 1px;
+/* Status and priority menus under the label. */
+.wm-note-card__props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
 }
 
-.wm-note-card.is-resolved .wm-note-body {
+/* Done or put away: the text steps back. */
+.wm-note-card[data-status='completed'] .wm-note-body,
+.wm-note-card[data-status='archived'] .wm-note-body {
   color: var(--wm-text-muted);
+}
+
+.wm-note-card[data-status='archived']:not(.is-selected) {
+  background: color-mix(in srgb, var(--wm-surface-2) 50%, var(--wm-surface));
 }
 
 .wm-note-card__warning {
@@ -1237,6 +1501,17 @@ button.wm-pin:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.wm-note-editor__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.wm-select {
+  padding-right: 6px;
+  cursor: pointer;
 }
 
 .wm-note-editor__actions {

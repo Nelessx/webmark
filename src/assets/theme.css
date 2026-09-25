@@ -29,6 +29,19 @@
   --wm-danger-soft: rgba(224, 68, 74, 0.12);
   --wm-warning: #c98a00;
 
+  /*
+   * Note statuses and priorities (src/lib/noteMeta.ts): status dots, badge
+   * tints and priority icons on WebMark's own surfaces. Each is at least 4.5:1
+   * against the surfaces, so they also work as text.
+   */
+  --wm-status-open: #5b4cf5;
+  --wm-status-in-progress: #2563eb;
+  --wm-status-completed: #18794e;
+  --wm-status-archived: #6b6b7b;
+  --wm-priority-high: #d1242f;
+  --wm-priority-medium: #9a6700;
+  --wm-priority-low: #6b6b7b;
+
   --wm-radius-sm: 6px;
   --wm-radius: 10px;
   --wm-radius-lg: 14px;
@@ -38,11 +51,20 @@
   --wm-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --wm-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 
-  /* In-page picker / pin colours (must read well on any site). */
+  /*
+   * In-page picker / pin colours (must read well on any site). Pins carry
+   * white numbers, so every pin colour is at least 4.5:1 against white, in
+   * both colour schemes. Archived notes get no pin on the page; their badge in
+   * lists is hollow. The red dot marks a high-priority note's pin.
+   */
   --wm-highlight: #5b4cf5;
   --wm-highlight-fill: rgba(91, 76, 245, 0.1);
   --wm-pin-open: #5b4cf5;
-  --wm-pin-resolved: #1f9d61;
+  --wm-pin-in-progress: #2563eb;
+  --wm-pin-completed: #18794e;
+  --wm-pin-archived: #6b6b7b;
+  --wm-pin-orphaned: #8a8a99;
+  --wm-pin-high: #e0444a;
 
   color-scheme: light dark;
 }
@@ -67,6 +89,15 @@
     --wm-success-soft: rgba(62, 194, 127, 0.16);
     --wm-danger: #ff6369;
     --wm-danger-soft: rgba(255, 99, 105, 0.16);
+
+    /* Lighter, to read on dark surfaces. Pin colours stay: they carry white numbers. */
+    --wm-status-open: #9d94ff;
+    --wm-status-in-progress: #6b9eff;
+    --wm-status-completed: #3ec27f;
+    --wm-status-archived: #9a9aab;
+    --wm-priority-high: #ff6369;
+    --wm-priority-medium: #e3b341;
+    --wm-priority-low: #9a9aab;
 
     --wm-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);
     --wm-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 12px 40px rgba(0, 0, 0, 0.5);

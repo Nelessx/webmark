@@ -16,11 +16,21 @@ export interface SegmentedProps<T extends string> {
   label: string;
   /** Stretch items to fill the width. */
   block?: boolean;
+  /** 'chips': separate pills that wrap onto more lines, for narrow places (the side panel). */
+  variant?: 'tabs' | 'chips';
   className?: string;
 }
 
 /** Single-choice filter tabs (radio group; arrow keys move the selection). */
-export function Segmented<T extends string>({ options, value, onChange, label, block, className }: SegmentedProps<T>) {
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  block,
+  variant = 'tabs',
+  className,
+}: SegmentedProps<T>) {
   const groupRef = useRef<HTMLDivElement>(null);
 
   const select = (index: number) => {
@@ -52,7 +62,12 @@ export function Segmented<T extends string>({ options, value, onChange, label, b
       ref={groupRef}
       role="radiogroup"
       aria-label={label}
-      className={cx('wm-segmented', block && 'wm-segmented--block', className)}
+      className={cx(
+        'wm-segmented',
+        block && 'wm-segmented--block',
+        variant === 'chips' && 'wm-segmented--chips',
+        className,
+      )}
       onKeyDown={onKeyDown}
     >
       {options.map((option, index) => {
@@ -69,7 +84,9 @@ export function Segmented<T extends string>({ options, value, onChange, label, b
             className="wm-segmented__item"
             onClick={() => onChange(option.value)}
           >
-            <span>{option.label}</span>
+            <span className="wm-segmented__label">{option.label}</span>
+            {/* A flex container drops this space from the layout; it keeps "Open 2" apart in the accessible name. */}
+            {option.count !== undefined ? ' ' : null}
             {option.count !== undefined ? <span className="wm-segmented__count">{option.count}</span> : null}
           </button>
         );

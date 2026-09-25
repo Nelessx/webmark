@@ -20,7 +20,7 @@ import type { LayoutTracker } from './layout';
 import { PageNotes, waitForElement } from './pageNotes';
 import { computePageState, reportPageStateChanges } from './pageState';
 import { NoteResolver } from './resolver';
-import { findNote, selectLayoutTargets, type AppStore } from './store';
+import { findNote, hasPin, selectLayoutTargets, type AppStore } from './store';
 import { Toaster } from './toasts';
 
 /** What the React components may do. */
@@ -203,7 +203,11 @@ export class Controller implements UiActions {
     }
   }
 
-  /** Scroll to a note's element, flash it and open it; or show the "not found" card. */
+  /**
+   * Scroll to a note's element, flash it and open it; or show the "not found"
+   * card. An archived note opens too when its element is found, but never gets
+   * the card: it is put away, so nothing is missing.
+   */
   async focusNote(noteId: string, waitMs = 0): Promise<boolean> {
     await this.ready;
     if (!findNote(this.store.get(), noteId)) await this.notes.load();
@@ -214,7 +218,8 @@ export class Controller implements UiActions {
     if (this.ctx.isInvalid) return false;
     this.stopPicker();
     if (!el) {
-      this.store.set({ orphanNoteId: noteId, hoverNoteId: null });
+      const note = findNote(this.store.get(), noteId);
+      this.store.set({ orphanNoteId: note && hasPin(note) ? noteId : null, hoverNoteId: null });
       return false;
     }
     this.store.set({ orphanNoteId: null });

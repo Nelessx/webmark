@@ -28,6 +28,7 @@ export function toDraft(values: EditorFields, fallbackLabel: string): EditorDraf
     body: values.body.trim(),
     tags: parseTags(values.tags),
     status: values.status,
+    priority: values.priority,
   };
 }
 
@@ -36,7 +37,10 @@ export function editedFields(values: EditorFields, initial: EditorFields): Edite
   return (Object.keys(initial) as (keyof EditorFields)[]).filter((key) => values[key] !== initial[key]);
 }
 
-/** Store a new note for a picked element (screenshot first, so listeners can load it right away). */
+/**
+ * Store a new note for a picked element (screenshot first, so listeners can
+ * load it right away). New notes start 'open', with the priority chosen in the form.
+ */
 export async function createNote(request: CreateRequest, draft: EditorDraft, author: string): Promise<Note> {
   const id = newNoteId();
   let hasScreenshot = false;
@@ -58,6 +62,7 @@ export async function createNote(request: CreateRequest, draft: EditorDraft, aut
     label: draft.label,
     body: draft.body,
     status: 'open',
+    priority: draft.priority,
     tags: draft.tags,
     author,
     anchor: request.anchor,
@@ -71,7 +76,7 @@ export async function createNote(request: CreateRequest, draft: EditorDraft, aut
 
 /**
  * Write only the `edited` fields: the others may have changed elsewhere while
- * the editor was open (e.g. resolved from the dashboard) and must not be
+ * the editor was open (e.g. completed from the dashboard) and must not be
  * overwritten with the values the editor opened with. Resolves undefined if
  * the note no longer exists.
  */
@@ -86,5 +91,6 @@ export function updateEditedFields(
   if (edited.includes('body')) patch.body = draft.body;
   if (edited.includes('tags')) patch.tags = draft.tags;
   if (edited.includes('status')) patch.status = draft.status;
+  if (edited.includes('priority')) patch.priority = draft.priority;
   return updateNote(pageKey, noteId, patch);
 }

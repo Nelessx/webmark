@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { Button } from '@/components/Button';
 import { ConfirmButton } from '@/components/ConfirmButton';
-import { IconCheck, IconDownload, IconRotateCcw, IconTrash, IconX } from '@/components/icons';
+import { IconDownload, IconTrash, IconX } from '@/components/icons';
+import { MenuButton } from '@/components/MenuButton';
+import { PRIORITY_MENU_OPTIONS, STATUS_MENU_OPTIONS } from '@/components/NoteMenus';
 import { showToast } from '@/components/toast';
+import { PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
 import { deleteNotes, updateNotes } from '@/lib/storage';
-import type { Note, NoteStatus } from '@/lib/types';
+import type { Note, NotePatch } from '@/lib/types';
 import { exportNotes } from './DataActions';
 
 interface BulkBarProps {
@@ -24,29 +27,32 @@ export function BulkBar({ selected, shownCount, onSelectAll, onClear }: BulkBarP
    * One storage call for the whole selection (one write per page), so open
    * pages and lists update once instead of once per note.
    */
-  async function run(label: string, notes: Note[], action: (notes: Note[]) => Promise<unknown>): Promise<boolean> {
+  async function run(done: string, failed: string, action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true);
     try {
-      await action(notes);
-      showToast(`${label}: ${plural(notes.length)}`, { tone: 'success' });
+      await action();
+      showToast(done, { tone: 'success' });
       return true;
     } catch {
-      showToast(`${label} failed for ${plural(notes.length)}. Try again.`, { tone: 'danger' });
+      showToast(`${failed} Try again.`, { tone: 'danger' });
       return false;
     } finally {
       setBusy(false);
     }
   }
 
-  const setStatus = (status: NoteStatus, label: string) =>
-    run(
-      label,
-      selected.filter((n) => n.status !== status),
-      (notes) => updateNotes(notes.map((n) => ({ pageKey: n.pageKey, noteId: n.id, patch: { status } }))),
+  /** Write `patch` to the selected notes it changes; the rest already have it. */
+  const apply = (patch: NotePatch, changes: (note: Note) => boolean, what: string) => {
+    const notes = selected.filter(changes);
+    return run(`${plural(count)} set to ${what}`, `Couldn't set ${plural(count)} to ${what}.`, () =>
+      updateNotes(notes.map((n) => ({ pageKey: n.pageKey, noteId: n.id, patch }))),
     );
+  };
 
   const remove = async () => {
-    const done = await run('Deleted', selected, (notes) => deleteNotes(notes.map((n) => ({ pageKey: n.pageKey, noteId: n.id }))));
+    const done = await run(`Deleted ${plural(count)}`, `Deleting ${plural(count)} failed.`, () =>
+      deleteNotes(selected.map((n) => ({ pageKey: n.pageKey, noteId: n.id }))),
+    );
     if (done) onClear();
   };
 
@@ -59,12 +65,28 @@ export function BulkBar({ selected, shownCount, onSelectAll, onClear }: BulkBarP
         </Button>
       ) : null}
       <span className="wm-allnotes__bulk-spacer" />
-      <Button size="sm" icon={<IconCheck />} disabled={busy} onClick={() => void setStatus('resolved', 'Resolved')}>
-        Resolve
-      </Button>
-      <Button size="sm" icon={<IconRotateCcw />} disabled={busy} onClick={() => void setStatus('open', 'Reopened')}>
-        Reopen
-      </Button>
+      <MenuButton
+        label="Set status"
+        menuLabel={`Set the status of ${plural(count)}`}
+        className="wm-btn wm-btn--secondary wm-btn--sm"
+        options={STATUS_MENU_OPTIONS}
+        disabled={busy}
+        onSelect={(status) => void apply({ status }, (n) => n.status !== status, STATUS_LABELS[status])}
+      >
+        Set status
+      </MenuButton>
+      <MenuButton
+        label="Set priority"
+        menuLabel={`Set the priority of ${plural(count)}`}
+        className="wm-btn wm-btn--secondary wm-btn--sm"
+        options={PRIORITY_MENU_OPTIONS}
+        disabled={busy}
+        onSelect={(priority) =>
+          void apply({ priority }, (n) => n.priority !== priority, `${PRIORITY_LABELS[priority]} priority`)
+        }
+      >
+        Set priority
+      </MenuButton>
       <Button
         size="sm"
         icon={<IconDownload />}

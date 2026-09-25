@@ -29,8 +29,8 @@ const createRequest: EditorRequest = {
 };
 const editRequest: EditorRequest = { mode: 'edit', page, label: 'Users card', noteId: 'n1' };
 const draft: DraftState = {
-  initial: { label: 'Revenue card', body: '', tags: '', status: 'open' },
-  values: { label: 'Revenue card', body: 'Half a thought', tags: '', status: 'open' },
+  initial: { label: 'Revenue card', body: '', tags: '', status: 'open', priority: 'medium' },
+  values: { label: 'Revenue card', body: 'Half a thought', tags: '', status: 'open', priority: 'high' },
 };
 
 function contentScript(overrides: Partial<Sender> = {}): Sender {
@@ -238,6 +238,19 @@ describe('validation', () => {
     expect(isEditorRequest({ ...createRequest, anchor: 'div' })).toBe(false);
     expect(isEditorRequest({ ...createRequest, page: { ...page, pageKey: '' } })).toBe(false);
     expect(isEditorRequest({ ...editRequest, draft: { initial: draft.initial } })).toBe(false);
+
+    // Drafts carry every status and priority, and nothing else.
+    for (const status of ['open', 'in_progress', 'completed', 'archived'] as const) {
+      expect(isEditorRequest({ ...editRequest, draft: { ...draft, values: { ...draft.values, status } } })).toBe(true);
+    }
+    for (const priority of ['low', 'medium', 'high'] as const) {
+      expect(isEditorRequest({ ...editRequest, draft: { ...draft, values: { ...draft.values, priority } } })).toBe(true);
+    }
+    const withValues = (values: Record<string, unknown>) => ({ ...editRequest, draft: { ...draft, values: { ...draft.values, ...values } } });
+    expect(isEditorRequest(withValues({ status: 'resolved' }))).toBe(false);
+    expect(isEditorRequest(withValues({ status: 'done' }))).toBe(false);
+    expect(isEditorRequest(withValues({ priority: 'urgent' }))).toBe(false);
+    expect(isEditorRequest(withValues({ priority: undefined }))).toBe(false);
 
     expect(isEditorFrameEvent({ kind: 'dirty', dirty: true })).toBe(true);
     expect(isEditorFrameEvent({ kind: 'toast', text: 'Note saved', tone: 'info' })).toBe(true);

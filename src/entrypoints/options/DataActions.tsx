@@ -4,6 +4,7 @@ import { IconDownload, IconUpload } from '@/components/icons';
 import { showToast } from '@/components/toast';
 import { buildExportBundle, downloadFile, importBundle, parseExportBundle } from '@/lib/export';
 import { notesToCsv, notesToMarkdownReport } from '@/lib/format';
+import { getAllNotes } from '@/lib/storage';
 import type { Note } from '@/lib/types';
 
 export type ExportKind = 'markdown' | 'csv' | 'json' | 'json-lite';
@@ -17,9 +18,13 @@ function fileStamp(): string {
 export async function exportNotes(kind: ExportKind, notes: Note[]): Promise<void> {
   const name = `webmark-${fileStamp()}`;
   switch (kind) {
-    case 'markdown':
-      downloadFile(`${name}.md`, notesToMarkdownReport(notes), 'text/markdown');
+    case 'markdown': {
+      // Every stored note numbers the pins, so "#3" matches pin 3 even when
+      // the report leaves some notes out (archived, filtered, not selected).
+      const allNotes = await getAllNotes();
+      downloadFile(`${name}.md`, notesToMarkdownReport(notes, { allNotes }), 'text/markdown');
       return;
+    }
     case 'csv':
       downloadFile(`${name}.csv`, notesToCsv(notes), 'text/csv');
       return;
@@ -31,13 +36,24 @@ export async function exportNotes(kind: ExportKind, notes: Note[]): Promise<void
   }
 }
 
-/** Export (report / CSV / backup) and import (JSON backup) for the notes list. */
-export function DataActions({ notes, filtered }: { notes: Note[]; filtered: Note[] | null }) {
+interface DataActionsProps {
+  /** Every note. */
+  notes: Note[];
+  /** The notes the list shows (the default view leaves archived ones out), in list order. */
+  shown: Note[];
+}
+
+/**
+ * Export (report / CSV / backup) and import (JSON backup) for the notes list.
+ * A backup always holds every note; a report or CSV holds what the list shows.
+ */
+export function DataActions({ notes, shown }: DataActionsProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<ExportKind>('markdown');
   const [busy, setBusy] = useState(false);
-  // When a search is active, export what the user sees.
-  const target = filtered ?? notes;
+  const backup = kind === 'json' || kind === 'json-lite';
+  const target = backup ? notes : shown;
+  const everything = target.length === notes.length;
 
   async function onExport() {
     setBusy(true);
@@ -80,7 +96,7 @@ export function DataActions({ notes, filtered }: { notes: Note[]; filtered: Note
         <option value="json-lite">JSON (no screenshots)</option>
       </select>
       <Button size="sm" icon={<IconDownload />} disabled={busy || target.length === 0} onClick={onExport}>
-        {filtered ? `Export ${target.length} shown` : 'Export all'}
+        {everything ? 'Export all' : `Export ${target.length} shown`}
       </Button>
       <Button size="sm" variant="ghost" icon={<IconUpload />} disabled={busy} onClick={() => fileInput.current?.click()}>
         Import

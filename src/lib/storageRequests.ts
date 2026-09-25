@@ -1,3 +1,4 @@
+import { isNotePriority, isNoteStatus } from './noteMeta';
 import { isScreenshotDataUrl } from './screenshotDb';
 import type { StorageOp } from './storage';
 import type { NotePatch, Settings } from './types';
@@ -42,7 +43,8 @@ const isNumber: Check = (value) => typeof value === 'number' && Number.isFinite(
 const isNoteId: Check = (value) => typeof value === 'string' && value !== '' && value.length <= MAX_ID_LENGTH;
 const isPageKey: Check = (value) => typeof value === 'string' && value !== '';
 const isTextList: Check = (value) => Array.isArray(value) && value.every(isText);
-const isStatus: Check = (value) => value === 'open' || value === 'resolved';
+const isStatus: Check = isNoteStatus;
+const isPriority: Check = isNotePriority;
 const listOf = (check: Check, max = MAX_BATCH): Check => (value) =>
   Array.isArray(value) && value.length <= max && value.every(check);
 
@@ -59,6 +61,7 @@ const NOTE_FIELDS: Record<string, Check> = {
   label: isText,
   body: isText,
   status: isStatus,
+  priority: isPriority,
   tags: isTextList,
   author: isText,
   anchor: isRecord,
@@ -72,6 +75,7 @@ const PATCH_FIELDS: Record<keyof NotePatch, Check> = {
   label: isText,
   body: isText,
   status: isStatus,
+  priority: isPriority,
   tags: isTextList,
   anchor: isRecord,
   hasScreenshot: isBoolean,

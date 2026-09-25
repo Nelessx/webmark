@@ -26,6 +26,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     label: 'Dashboard → Revenue Card',
     body: `Body ${seq}`,
     status: 'open',
+    priority: 'medium',
     tags: ['bug'],
     author: 'Alice',
     anchor: {
@@ -129,7 +130,7 @@ describe('buildExportBundle', () => {
 
 describe('parseExportBundle', () => {
   it('round-trips an exported bundle', async () => {
-    const a = await saveNote(makeNote({ hasScreenshot: true, status: 'resolved' }));
+    const a = await saveNote(makeNote({ hasScreenshot: true, status: 'completed' }));
     await saveNote(makeNote({ pageKey: PAGE_B, url: PAGE_B, tags: [] }));
     await saveScreenshot(a.id, SHOT);
 
@@ -157,6 +158,31 @@ describe('parseExportBundle', () => {
     ['an item test id on an unknown attribute', { item: { depth: 1, text: 'a', length: 1, shapeUnique: true, testId: { name: 'onclick', value: 'x' } } }, "'anchor.item.testId.name'"],
   ])('rejects %s', (_, patch, field) => {
     expect(() => parseExportBundle(bundleJson({ notes: [rawNote({ anchor: rawAnchor(patch) })] }))).toThrow(field);
+  });
+
+  it('imports files from before four statuses and priorities existed', () => {
+    const legacy = rawNote({ status: 'resolved', schemaVersion: 1 }, ['priority']);
+    const [note] = parseExportBundle(bundleJson({ notes: [legacy] })).notes;
+    expect(note).toMatchObject({ status: 'completed', priority: 'medium', schemaVersion: NOTE_SCHEMA_VERSION });
+  });
+
+  it('keeps every status and priority', () => {
+    const notes = (['open', 'in_progress', 'completed', 'archived'] as const).map((status, i) =>
+      rawNote({ id: `n${i}`, status, priority: (['low', 'medium', 'high', 'low'] as const)[i] }),
+    );
+    const parsed = parseExportBundle(bundleJson({ notes })).notes;
+    expect(parsed.map((n) => [n.status, n.priority])).toEqual([
+      ['open', 'low'],
+      ['in_progress', 'medium'],
+      ['completed', 'high'],
+      ['archived', 'low'],
+    ]);
+  });
+
+  it('rejects an unknown priority', () => {
+    expect(() => parseExportBundle(bundleJson({ notes: [rawNote({ priority: 'urgent' })] }))).toThrow(
+      "Note 1 has an invalid 'priority' (expected 'low', 'medium' or 'high').",
+    );
   });
 
   it('fills optional fields with defaults', () => {
@@ -258,7 +284,7 @@ describe('parseExportBundle', () => {
     ['a numeric url', rawNote({ url: 5 }), "Note 2 has an invalid 'url' (expected text)."],
     ['a missing pageTitle', rawNote({}, ['pageTitle']), "Note 2 is missing 'pageTitle'."],
     ['a missing label', rawNote({}, ['label']), "Note 2 is missing 'label'."],
-    ['an unknown status', rawNote({ status: 'done' }), "Note 2 has an invalid 'status' (expected 'open' or 'resolved')."],
+    ['an unknown status', rawNote({ status: 'done' }), "Note 2 has an invalid 'status' (expected 'open', 'in_progress', 'completed' or 'archived')."],
     ['tags as a string', rawNote({ tags: 'bug' }), "Note 2 has an invalid 'tags' (expected a list of text)."],
     ['non-text tags', rawNote({ tags: ['ok', 3] }), "Note 2 has an invalid 'tags' (expected a list of text)."],
     ['a text createdAt', rawNote({ createdAt: '2026-01-01' }), "Note 2 has an invalid 'createdAt' (expected a number)."],

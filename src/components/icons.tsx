@@ -102,6 +102,17 @@ export const IconPencil = createIcon(
 
 export const IconCheck = createIcon('Check', <path d="M20 6 9 17l-5-5" />);
 
+export const IconPlay = createIcon('Play', <path d="M7.5 4.8v14.4a.8.8 0 0 0 1.2.7l11.4-7.2a.8.8 0 0 0 0-1.4L8.7 4.1a.8.8 0 0 0-1.2.7Z" />);
+
+export const IconArchiveRestore = createIcon(
+  'ArchiveRestore',
+  <>
+    <rect x="2.5" y="3.5" width="19" height="5" rx="1.5" />
+    <path d="M4.5 8.5v10a2 2 0 0 0 2 2h3M19.5 8.5v10a2 2 0 0 1-2 2h-3" />
+    <path d="m9 15 3-3 3 3M12 12v8.5" />
+  </>,
+);
+
 export const IconRotateCcw = createIcon(
   'RotateCcw',
   <>

@@ -14,7 +14,8 @@ test.describe('in-page notes', () => {
       pinsVisible: true,
       resolvedIds: [],
       orphanedIds: [],
-      openCount: 0,
+      activeCount: 0,
+      statusCounts: { open: 0, in_progress: 0, completed: 0, archived: 0 },
     });
 
     // One host element; its shadow root is open only in this E2E build.
@@ -87,6 +88,7 @@ test.describe('in-page notes', () => {
       pageTitle: 'Acme Analytics · Dashboard',
       body: 'Revenue should include refunds',
       status: 'open',
+      priority: 'medium',
       tags: [],
     });
     expect(note?.label).toContain('Revenue');
@@ -97,7 +99,7 @@ test.describe('in-page notes', () => {
     expect((await ext.pageState(page)).pickerActive).toBe(false);
   });
 
-  test('pins: numbered pin on the element, survives reload, opens the editor, edits and resolves', async ({
+  test('pins: numbered pin on the element, survives reload, opens the editor, edits and completes', async ({
     page,
     ext,
     server,
@@ -139,17 +141,17 @@ test.describe('in-page notes', () => {
     await expect(editor).toBeHidden();
     await expect.poll(async () => (await ext.note(page, note.id))?.body).toBe('Show the currency next to the value');
 
-    // Resolve from the editor.
+    // Complete from the editor.
     await wm.pin(note.id).click();
     await expect(editor.locator('[data-wm-body]')).toHaveValue('Show the currency next to the value');
-    await editor.locator('[data-wm-status-option="resolved"]').click();
+    await editor.locator('[data-wm-status-option="completed"]').click();
     await editor.locator('[data-wm-save]').click();
     await expect(editor).toBeHidden();
-    await expect.poll(async () => (await ext.note(page, note.id))?.status).toBe('resolved');
-    await expect(wm.pin(note.id)).toHaveAttribute('data-status', 'resolved');
-    expect((await ext.pageState(page)).openCount).toBe(0);
+    await expect.poll(async () => (await ext.note(page, note.id))?.status).toBe('completed');
+    await expect(wm.pin(note.id)).toHaveAttribute('data-status', 'completed');
+    expect((await ext.pageState(page)).activeCount).toBe(0);
 
-    // Reopen and delete from the editor.
+    // Open again and delete from the editor.
     await wm.pin(note.id).click();
     await editor.locator('[data-wm-delete]').click();
     await editor.locator('[data-wm-delete-confirm]').click();
@@ -412,7 +414,7 @@ test.describe('in-page notes', () => {
     await expect.poll(() => ext.badgeText(other)).toBe('');
   });
 
-  test('toolbar badge shows the number of open notes on the tab', async ({ page, ext, server }) => {
+  test('toolbar badge shows the number of notes on the tab that still need work', async ({ page, ext, server }) => {
     const wm = new WebMark(page, ext);
     await openDashboard(wm, server.url('/dashboard.html'));
     const d = dashboard(page);
@@ -427,9 +429,14 @@ test.describe('in-page notes', () => {
     await wm.reload();
     await expect.poll(() => ext.badgeText(page)).toBe('2');
 
-    // Resolving a note counts down.
+    // A note in progress still counts; a completed one doesn't.
     await wm.pin(first.id).click();
-    await wm.editor('edit').locator('[data-wm-status-option="resolved"]').click();
+    await wm.editor('edit').locator('[data-wm-status-option="in_progress"]').click();
+    await page.keyboard.press('Control+Enter');
+    await expect.poll(async () => (await ext.note(page, first.id))?.status).toBe('in_progress');
+    await expect.poll(() => ext.badgeText(page)).toBe('2');
+    await wm.pin(first.id).click();
+    await wm.editor('edit').locator('[data-wm-status-option="completed"]').click();
     await page.keyboard.press('Control+Enter');
     await expect.poll(() => ext.badgeText(page)).toBe('1');
   });

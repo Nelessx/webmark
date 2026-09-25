@@ -1,13 +1,13 @@
-import { cx } from '@/components/cx';
 import { EmptyState } from '@/components/EmptyState';
 import { firstLine } from '@/components/filter';
 import { IconAlertTriangle, IconPin } from '@/components/icons';
 import { PinBadge } from '@/components/PinBadge';
 import { pinNumber } from '@/lib/constants';
+import { isArchivedStatus, STATUS_LABELS } from '@/lib/noteMeta';
 import type { Note } from '@/lib/types';
 
 interface PageNoteListProps {
-  /** The page's notes, oldest first (pin order). */
+  /** Every note of the page, oldest first (pin order). Archived ones aren't listed. */
   notes: Note[];
   orphanedIds: ReadonlySet<string>;
   onSelect: (noteId: string) => void;
@@ -15,8 +15,17 @@ interface PageNoteListProps {
 
 /** Compact list of the page's notes; clicking one reveals it on the page. */
 export function PageNoteList({ notes, orphanedIds, onSelect }: PageNoteListProps) {
-  if (!notes.length) {
-    return (
+  const shown = notes.filter((n) => !isArchivedStatus(n.status));
+
+  if (!shown.length) {
+    return notes.length ? (
+      <EmptyState
+        compact
+        icon={<IconPin size={20} />}
+        title="All notes on this page are archived"
+        description="Find them under Archived in the side panel or on the All notes page."
+      />
+    ) : (
       <EmptyState
         compact
         icon={<IconPin size={20} />}
@@ -32,19 +41,23 @@ export function PageNoteList({ notes, orphanedIds, onSelect }: PageNoteListProps
         On this page
       </h2>
       <ul className="popup-notes">
-        {notes.map((note) => {
+        {shown.map((note) => {
+          // Numbered among all the page's notes, archived ones included, like the pins.
           const number = pinNumber(note.id, notes);
           const orphaned = orphanedIds.has(note.id);
           const preview = firstLine(note.body);
+          const high = note.priority === 'high';
           return (
             <li key={note.id}>
               <button
                 type="button"
-                className={cx('popup-note', note.status === 'resolved' && 'is-resolved')}
+                className="popup-note"
+                data-status={note.status}
+                data-priority={note.priority}
                 onClick={() => onSelect(note.id)}
                 title={orphaned ? 'Not found on this page' : 'Show on page'}
               >
-                <PinBadge number={number} status={note.status} orphaned={orphaned} size="sm" />
+                <PinBadge number={number} status={note.status} priority={note.priority} orphaned={orphaned} size="sm" />
                 <span className="popup-note__text">
                   <span className="popup-note__label">{note.label || 'Untitled element'}</span>
                   {preview ? <span className="popup-note__body">{preview}</span> : null}
@@ -54,7 +67,10 @@ export function PageNoteList({ notes, orphanedIds, onSelect }: PageNoteListProps
                     <IconAlertTriangle size={14} title="Not found on this page" />
                   </span>
                 ) : null}
-                {note.status === 'resolved' ? <span className="wm-visually-hidden">(resolved)</span> : null}
+                <span className="wm-visually-hidden">
+                  ({STATUS_LABELS[note.status]}
+                  {high ? ', high priority' : ''})
+                </span>
               </button>
             </li>
           );

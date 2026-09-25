@@ -34,6 +34,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     label: 'Revenue card',
     body: `Note ${seq}`,
     status: 'open',
+    priority: 'medium',
     tags: [],
     author: '',
     anchor: {
@@ -155,13 +156,13 @@ describe('the background is the single writer', () => {
 
     const fresh = makeNote({ id: 'fresh' });
     await Promise.all([
-      dashboard.updateNotes(existing.map((n) => ({ pageKey: n.pageKey, noteId: n.id, patch: { status: 'resolved' } }))),
+      dashboard.updateNotes(existing.map((n) => ({ pageKey: n.pageKey, noteId: n.id, patch: { status: 'completed' } }))),
       contentScript.saveNote(fresh),
     ]);
 
     const stored = await dashboard.getNotesForPage(PAGE_A);
     expect(stored.map((n) => n.id)).toContain('fresh');
-    expect(stored.filter((n) => n.id !== 'fresh').every((n) => n.status === 'resolved')).toBe(true);
+    expect(stored.filter((n) => n.id !== 'fresh').every((n) => n.status === 'completed')).toBe(true);
   });
 
   it('keeps both settings changed from two contexts at once', async () => {
@@ -350,7 +351,7 @@ describe('content scripts may only change single notes', () => {
   it('may save, update and delete a note, screenshots and settings', async () => {
     const contentScript = await client();
     const note = await contentScript.saveNote(makeNote({ id: 'x' }));
-    await contentScript.updateNote(note.pageKey, note.id, { status: 'resolved' });
+    await contentScript.updateNote(note.pageKey, note.id, { status: 'completed' });
     await contentScript.saveSettings({ pinsVisible: false });
     await contentScript.deleteNote(note.pageKey, note.id);
     expect(await contentScript.getAllNotes()).toEqual([]);
@@ -359,7 +360,7 @@ describe('content scripts may only change single notes', () => {
   it.each([
     ['delete everything', (s: Storage) => s.deleteAllNotes()],
     ['import notes', (s: Storage) => s.bulkPutNotes([makeNote()])],
-    ['bulk-update notes', (s: Storage) => s.updateNotes([{ pageKey: PAGE_A, noteId: 'x', patch: { status: 'resolved' } }])],
+    ['bulk-update notes', (s: Storage) => s.updateNotes([{ pageKey: PAGE_A, noteId: 'x', patch: { status: 'completed' } }])],
     ['bulk-delete notes', (s: Storage) => s.deleteNotes([{ pageKey: PAGE_A, noteId: 'x' }])],
     ['set where another page opens', (s: Storage) => s.setPendingFocus(PAGE_A, 'x')],
   ])('may not %s', async (_name, action) => {
@@ -437,7 +438,7 @@ describe('startup migration', () => {
     await background();
 
     // The content script already uses the new page key.
-    expect(await contentScript.updateNote(PAGE_A, 'x', { status: 'resolved' })).toMatchObject({ id: 'x', status: 'resolved' });
+    expect(await contentScript.updateNote(PAGE_A, 'x', { status: 'completed' })).toMatchObject({ id: 'x', status: 'completed' });
   });
 
   it('keeps screenshots in storage.local when IndexedDB is unavailable, and tries again next start', async () => {

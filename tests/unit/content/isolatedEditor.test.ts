@@ -88,6 +88,7 @@ function makeNote(id: string, selector: string, createdAt: number): Note {
     label: `Label ${id}`,
     body: `Body of ${id}`,
     status: 'open',
+    priority: 'medium',
     tags: [],
     author: '',
     anchor: { selector } as ElementAnchor,
@@ -246,8 +247,8 @@ describe('isolated editor', () => {
     const first = await pickFree();
     await relay(first.token, { kind: 'connected' });
     background.mirrored = {
-      initial: { label: 'Label for free', body: '', tags: '', status: 'open' },
-      values: { label: 'Label for free', body: 'Typed before the reload', tags: '', status: 'open' },
+      initial: { label: 'Label for free', body: '', tags: '', status: 'open', priority: 'medium' },
+      values: { label: 'Label for free', body: 'Typed before the reload', tags: '', status: 'open', priority: 'high' },
     };
     const iframe = frame()!;
     iframe.dispatchEvent(new Event('load'));
@@ -320,8 +321,8 @@ describe('isolated editor', () => {
 
   it('reopens a draft the tab left unsaved, still with its changes', async () => {
     const draft: DraftState = {
-      initial: { label: 'Label for free', body: '', tags: '', status: 'open' },
-      values: { label: 'Label for free', body: 'Half a thought', tags: '', status: 'open' },
+      initial: { label: 'Label for free', body: '', tags: '', status: 'open', priority: 'medium' },
+      values: { label: 'Label for free', body: 'Half a thought', tags: '', status: 'open', priority: 'low' },
     };
     background.recover = {
       mode: 'create',

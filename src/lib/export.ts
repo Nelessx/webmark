@@ -1,5 +1,6 @@
 import { TEST_ID_ATTRIBUTES } from './anchor/stability';
 import { NOTE_LIMITS as LIMIT } from './limits';
+import { DEFAULT_PRIORITY, isNotePriority, normalizeStatus } from './noteMeta';
 import { isScreenshotDataUrl } from './screenshotDb';
 import { bulkPutNotes, deleteAllNotes, getAllNotes, getScreenshots } from './storage';
 import { NOTE_SCHEMA_VERSION, type AnchorItem, type DocRect, type ElementAnchor, type Note, type NoteStatus } from './types';
@@ -117,7 +118,12 @@ function simple<T>(test: (value: unknown) => value is T, expected: string): Chec
 const finiteNumber = simple((v): v is number => typeof v === 'number' && Number.isFinite(v), 'a number');
 const boolean = simple((v): v is boolean => typeof v === 'boolean', 'true or false');
 const object = simple(isRecord, 'an object');
-const status = simple((v): v is NoteStatus => v === 'open' || v === 'resolved', "'open' or 'resolved'");
+/** Today's statuses, plus 'resolved' from files exported before there were four (now 'completed'). */
+const status = simple(
+  (v): v is NoteStatus | 'resolved' => normalizeStatus(v) !== undefined,
+  "'open', 'in_progress', 'completed' or 'archived'",
+);
+const priority = simple(isNotePriority, "'low', 'medium' or 'high'");
 const count = simple((v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0, 'a whole number of 0 or more');
 const testIdName = simple(
   (v): v is string => typeof v === 'string' && (TEST_ID_ATTRIBUTES as readonly string[]).includes(v),
@@ -273,7 +279,9 @@ function parseNote(raw: unknown, index: number): Note {
     pageTitle: required(raw, 'pageTitle', text(LIMIT.pageTitle), ctx),
     label: required(raw, 'label', text(LIMIT.label), ctx),
     body: required(raw, 'body', text(LIMIT.body), ctx),
-    status: required(raw, 'status', status, ctx),
+    status: normalizeStatus(required(raw, 'status', status, ctx)) ?? 'open',
+    // Files exported before priorities existed have none.
+    priority: optional(raw, 'priority', priority, ctx) ?? DEFAULT_PRIORITY,
     tags: [...required(raw, 'tags', textList(LIMIT.tags, LIMIT.tag), ctx)],
     author: optional(raw, 'author', text(LIMIT.author), ctx) ?? '',
     anchor: parseAnchor(required(raw, 'anchor', object, ctx), nested(ctx, 'anchor')),

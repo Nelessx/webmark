@@ -30,6 +30,7 @@ function note(id: string, anchor: ElementAnchor): Note {
     label: '',
     body: 'b',
     status: 'open',
+    priority: 'medium',
     tags: [],
     author: '',
     anchor,

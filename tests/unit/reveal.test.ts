@@ -22,6 +22,7 @@ const note: Note = {
   label: 'Revenue card',
   body: 'Check the currency',
   status: 'open',
+  priority: 'medium',
   tags: [],
   author: '',
   anchor: { selector: '#revenue' } as ElementAnchor,

@@ -14,6 +14,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     label: 'Dashboard → Revenue Card',
     body: 'Change this to monthly revenue.\nShow the previous month too.',
     status: 'open',
+    priority: 'medium',
     tags: ['bug', 'ui'],
     author: 'Alice',
     anchor: {
@@ -196,6 +197,7 @@ describe('noteToMarkdown', () => {
         '',
         '- **Page:** [Dashboard · Acme](https://example.com/dashboard?utm_source=x)',
         '- **Status:** Open',
+        '- **Priority:** Medium',
         '- **Tags:** bug, ui',
         '- **Author:** Alice',
         '- **Created:** 2026-03-03 14:05 UTC',
@@ -218,9 +220,9 @@ describe('noteToMarkdown', () => {
     expect(md).not.toContain('div.card');
   });
 
-  it('marks resolved notes and omits empty tags and author', () => {
-    const md = noteToMarkdown(makeNote({ status: 'resolved', tags: [], author: '' }));
-    expect(md).toContain('- **Status:** Resolved');
+  it('shows completed notes and omits empty tags and author', () => {
+    const md = noteToMarkdown(makeNote({ status: 'completed', tags: [], author: '' }));
+    expect(md).toContain('- **Status:** Completed');
     expect(md).not.toContain('**Tags:**');
     expect(md).not.toContain('**Author:**');
   });
@@ -324,7 +326,7 @@ describe('notesToMarkdownReport', () => {
 
   function reportNotes(): Note[] {
     return [
-      makeNote({ id: 'a2', label: 'Header', body: 'Second on dashboard', createdAt: 200, status: 'resolved' }),
+      makeNote({ id: 'a2', label: 'Header', body: 'Second on dashboard', createdAt: 200, status: 'completed' }),
       makeNote({
         id: 'b1',
         pageKey: 'http://localhost:3000/',
@@ -356,14 +358,42 @@ describe('notesToMarkdownReport', () => {
       '',
       'Generated 2026-09-24 09:30 UTC',
       '',
-      '**4 notes** · 3 open · 1 resolved',
+      '**4 notes** · 3 open · 1 completed',
     ]);
+  });
+
+  it('summarises every status and priority in order, leaving out empty ones', () => {
+    const md = notesToMarkdownReport([
+      makeNote({ id: '1', status: 'open', priority: 'high' }),
+      makeNote({ id: '2', status: 'in_progress', priority: 'high' }),
+      makeNote({ id: '3', status: 'in_progress', priority: 'low' }),
+      makeNote({ id: '4', status: 'archived', priority: 'low' }),
+    ]);
+    expect(md).toContain('**4 notes** · 1 open · 2 in progress · 1 archived\n\nPriority: 2 high · 2 low\n');
+  });
+
+  it('ticks completed and archived notes and labels every note with its status and priority', () => {
+    const md = notesToMarkdownReport([
+      makeNote({ id: 'a', label: 'A', createdAt: 1, status: 'in_progress', priority: 'high' }),
+      makeNote({ id: 'b', label: 'B', createdAt: 2, status: 'archived', priority: 'low' }),
+    ]);
+    expect(md).toContain('- [ ] **#1 · A** · In progress · High priority');
+    expect(md).toContain('- [x] **#2 · B** · Archived · Low priority');
+  });
+
+  it('numbers pins over all of the page\'s notes, including ones the report leaves out', () => {
+    const archived = makeNote({ id: 'old', label: 'Old', createdAt: 1, status: 'archived' });
+    const current = makeNote({ id: 'new', label: 'New', createdAt: 2 });
+
+    expect(notesToMarkdownReport([current], { allNotes: [archived, current] })).toContain('**#2 · New**');
+    // Without the full list only the given notes count.
+    expect(notesToMarkdownReport([current])).toContain('**#1 · New**');
   });
 
   it('uses a custom, escaped title', () => {
     const md = notesToMarkdownReport([makeNote()], { title: 'Sprint *12* review' });
     expect(md.startsWith('# Sprint \\*12\\* review\n')).toBe(true);
-    expect(md).toContain('**1 note** · 1 open · 0 resolved');
+    expect(md).toContain('**1 note** · 1 open\n');
   });
 
   it('groups by site then page, and numbers notes by pin within each page', () => {
@@ -378,17 +408,17 @@ describe('notesToMarkdownReport', () => {
     const md = notesToMarkdownReport(reportNotes());
     expect(md).toContain(
       [
-        '- [ ] **#1 · Revenue**',
+        '- [ ] **#1 · Revenue** · Open · Medium priority',
         '',
         '  First on dashboard',
         '',
         '  _Tags: bug, ui · By Alice · 1970-01-01 00:00 UTC_',
         '',
-        '- [x] **#2 · Header**',
+        '- [x] **#2 · Header** · Completed · Medium priority',
       ].join('\n'),
     );
     expect(md).toContain(
-      ['- [ ] **#1 · Login button**', '', '  Make it bigger  ', '  and blue', '', '  _1970-01-01 00:00 UTC_'].join('\n'),
+      ['- [ ] **#1 · Login button** · Open · Medium priority', '', '  Make it bigger  ', '  and blue', '', '  _1970-01-01 00:00 UTC_'].join('\n'),
     );
   });
 
@@ -421,7 +451,7 @@ describe('notesToMarkdownReport', () => {
 
   it('handles an empty list', () => {
     const md = notesToMarkdownReport([]);
-    expect(md).toContain('**0 notes** · 0 open · 0 resolved');
+    expect(md).toContain('**0 notes**\n');
     expect(md).toContain('_No notes._');
     expect(md.endsWith('\n')).toBe(true);
   });
@@ -430,15 +460,20 @@ describe('notesToMarkdownReport', () => {
 // ---------------------------------------------------------------------------
 
 describe('notesToCsv', () => {
-  const HEADER = 'id,site,page_title,url,label,body,status,tags,author,created_at,updated_at,selector';
+  const HEADER = 'id,site,page_title,url,label,body,status,priority,tags,author,created_at,updated_at,selector';
 
   it('writes the header and one CRLF-terminated row per note', () => {
     const csv = notesToCsv([makeNote({ body: 'Simple body' })]);
     expect(csv).toBe(
       `${HEADER}\r\n` +
         'note-1,example.com,Dashboard · Acme,https://example.com/dashboard?utm_source=x,Dashboard → Revenue Card,' +
-        'Simple body,open,bug; ui,Alice,2026-03-03T14:05:00.000Z,2026-03-03T14:06:00.000Z,div.card > h2\r\n',
+        'Simple body,Open,Medium,bug; ui,Alice,2026-03-03T14:05:00.000Z,2026-03-03T14:06:00.000Z,div.card > h2\r\n',
     );
+  });
+
+  it('writes status and priority as readable labels', () => {
+    const rows = parseCsv(notesToCsv([makeNote({ status: 'in_progress', priority: 'high' })]));
+    expect(rows[1]?.slice(6, 8)).toEqual(['In progress', 'High']);
   });
 
   it('writes only the header for no notes', () => {
@@ -466,7 +501,8 @@ describe('notesToCsv', () => {
       'https://example.com/dashboard?utm_source=x',
       'a,"b"',
       'line 1\r\nline, 2 "quoted"',
-      'open',
+      'Open',
+      'Medium',
       'x; y',
       'Alice',
       '2026-03-03T14:05:00.000Z',
@@ -495,8 +531,8 @@ describe('notesToCsv', () => {
     const row = rows[1] ?? [];
     expect(row[2]).toBe("'+x");
     expect(row[5]).toBe("'=1+1");
-    expect(row[7]).toBe("'-a");
-    expect(row[8]).toBe("'@me");
+    expect(row[8]).toBe("'-a");
+    expect(row[9]).toBe("'@me");
   });
 
   it('leaves safe values and inner formula characters alone', () => {
@@ -506,8 +542,8 @@ describe('notesToCsv', () => {
 
   it('writes empty timestamps for invalid dates instead of throwing', () => {
     const rows = parseCsv(notesToCsv([makeNote({ createdAt: Number.NaN, updatedAt: 1e20 })]));
-    expect(rows[1]?.[9]).toBe('');
     expect(rows[1]?.[10]).toBe('');
+    expect(rows[1]?.[11]).toBe('');
   });
 
   it('uses the host (with port) as the site, and "Local files" for file URLs', () => {

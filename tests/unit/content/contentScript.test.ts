@@ -45,7 +45,13 @@ vi.mock('@/lib/format', () => ({
 
 const pageKey = () => getPageKey(location.href);
 
-function makeNote(id: string, selector: string, createdAt: number, status: Note['status'] = 'open'): Note {
+function makeNote(
+  id: string,
+  selector: string,
+  createdAt: number,
+  status: Note['status'] = 'open',
+  priority: Note['priority'] = 'medium',
+): Note {
   return {
     id,
     schemaVersion: NOTE_SCHEMA_VERSION,
@@ -55,6 +61,7 @@ function makeNote(id: string, selector: string, createdAt: number, status: Note[
     label: `Label ${id}`,
     body: `Body of ${id}`,
     status,
+    priority,
     tags: [],
     author: '',
     anchor: { selector } as ElementAnchor,
@@ -177,9 +184,9 @@ describe('content script', () => {
     expect(await getScreenshot(saved!.id)).toBe(shot);
   });
 
-  it('shows numbered pins for resolved notes and reports page state', async () => {
+  it('shows numbered pins for found notes and reports page state', async () => {
     await saveNote(makeNote('n1', '#card-a', 1));
-    await saveNote(makeNote('n2', '#btn-b', 2, 'resolved'));
+    await saveNote(makeNote('n2', '#btn-b', 2, 'completed'));
     await saveNote(makeNote('n3', '#gone', 3));
     await startContentScript();
 
@@ -188,13 +195,85 @@ describe('content script', () => {
     const pin2 = $('[data-wm-pin="n2"]');
     expect(pin1?.textContent).toBe('1');
     expect(pin2?.textContent).toBe('2');
-    expect(pin2?.getAttribute('data-status')).toBe('resolved');
+    expect(pin1?.getAttribute('data-status')).toBe('open');
+    expect(pin2?.getAttribute('data-status')).toBe('completed');
 
     const state = (await send({ type: 'wm:get-page-state' })) as PageState;
     expect(state.resolvedIds.sort()).toEqual(['n1', 'n2']);
     expect(state.orphanedIds).toEqual(['n3']);
-    expect(state.openCount).toBe(2);
+    expect(state.activeCount).toBe(2);
+    expect(state.statusCounts).toEqual({ open: 2, in_progress: 0, completed: 1, archived: 0 });
     expect(state.pinsVisible).toBe(true);
+  });
+
+  it('gives archived notes no pin while numbers stay put, and never reports them as not found', async () => {
+    await saveNote(makeNote('n1', '#card-a', 1));
+    await saveNote(makeNote('n2', '#btn-b', 2, 'archived'));
+    await saveNote(makeNote('n3', '#free', 3, 'in_progress'));
+    await saveNote(makeNote('n4', '#gone', 4, 'archived'));
+    await startContentScript();
+
+    await vi.waitFor(() => expect($$('[data-wm-pin]')).toHaveLength(2));
+    expect($('[data-wm-pin="n2"]')).toBeNull();
+    // "#3" is the third note of the page, archived ones included, everywhere.
+    expect($('[data-wm-pin="n1"]')?.textContent).toBe('1');
+    expect($('[data-wm-pin="n3"]')?.textContent).toBe('3');
+    expect($('[data-wm-pin="n3"]')?.getAttribute('data-status')).toBe('in_progress');
+
+    const state = (await send({ type: 'wm:get-page-state' })) as PageState;
+    expect(state.resolvedIds.sort()).toEqual(['n1', 'n2', 'n3']);
+    expect(state.orphanedIds).toEqual([]);
+    expect(state.activeCount).toBe(2);
+    expect(state.statusCounts).toEqual({ open: 1, in_progress: 1, completed: 0, archived: 2 });
+
+    // An archived note whose element is gone gets no "not found" card either.
+    expect(await send({ type: 'wm:focus-note', noteId: 'n4' })).toEqual({ found: false });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect($('[data-wm-orphan-card]')).toBeNull();
+
+    // One that is found still opens (from the side panel, say), to be edited or unarchived.
+    expect(await send({ type: 'wm:focus-note', noteId: 'n2' })).toEqual({ found: true });
+    await vi.waitFor(() => expect($('[data-wm-editor="edit"]')?.getAttribute('data-wm-note-id')).toBe('n2'));
+    expect($('[data-wm-status]')?.getAttribute('data-wm-status')).toBe('archived');
+  });
+
+  it('marks a high-priority pin and shows status and priority when a pin is hovered', async () => {
+    await saveNote(makeNote('n1', '#card-a', 1, 'in_progress', 'high'));
+    await saveNote(makeNote('n2', '#btn-b', 2, 'open', 'low'));
+    await startContentScript();
+    await vi.waitFor(() => expect($$('[data-wm-pin]')).toHaveLength(2));
+
+    const high = $('[data-wm-pin="n1"]') as HTMLButtonElement;
+    expect(high.getAttribute('data-priority')).toBe('high');
+    expect(high.getAttribute('aria-label')).toBe('WebMark note 1, In progress, high priority: Label n1');
+    expect($('[data-wm-pin="n2"]')?.getAttribute('data-priority')).toBe('low');
+    expect($('[data-wm-pin="n2"]')?.getAttribute('aria-label')).toBe('WebMark note 2, Open: Label n2');
+
+    high.focus();
+    await vi.waitFor(() => expect($('[data-wm-tooltip="n1"]')).not.toBeNull());
+    const tooltip = $('[data-wm-tooltip="n1"]')!;
+    expect(tooltip.querySelector('.wm-tooltip__num')?.getAttribute('data-status')).toBe('in_progress');
+    expect(tooltip.querySelector('.wm-tooltip__status')?.textContent).toBe('In progress');
+    expect(tooltip.querySelector('.wm-tooltip__priority')?.textContent).toBe('High priority');
+  });
+
+  it('removes the pin and the "not found" card of a note archived elsewhere', async () => {
+    await saveNote(makeNote('n1', '#card-a', 1));
+    await saveNote(makeNote('n2', '#gone', 2));
+    await startContentScript();
+    await vi.waitFor(() => expect($$('[data-wm-pin]')).toHaveLength(1));
+    expect(await send({ type: 'wm:focus-note', noteId: 'n2' })).toEqual({ found: false });
+    await vi.waitFor(() => expect($('[data-wm-orphan-card="n2"]')).not.toBeNull());
+
+    await updateNote(pageKey(), 'n2', { status: 'archived' });
+    await vi.waitFor(() => expect($('[data-wm-orphan-card]')).toBeNull());
+    await updateNote(pageKey(), 'n1', { status: 'archived' });
+    await vi.waitFor(() => expect($$('[data-wm-pin]')).toHaveLength(0));
+    expect(((await send({ type: 'wm:get-page-state' })) as PageState).orphanedIds).toEqual([]);
+
+    // Unarchived, it is back where it was.
+    await updateNote(pageKey(), 'n1', { status: 'open' });
+    await vi.waitFor(() => expect($('[data-wm-pin="n1"]')?.textContent).toBe('1'));
   });
 
   it('creates a note from the picker and saves it to storage', async () => {
@@ -209,8 +288,15 @@ describe('content script', () => {
     expect(save.disabled).toBe(true);
     expect(($('[data-wm-label]') as HTMLInputElement).value).toBe('Label for free');
 
+    // A new note starts open: no status choice, and priority Medium until changed.
+    expect($('[data-wm-status]')).toBeNull();
+    expect($('[data-wm-priority]')?.getAttribute('data-wm-priority')).toBe('medium');
+    expect($('[data-wm-priority-option="medium"]')?.getAttribute('aria-checked')).toBe('true');
+
     typeInto($('[data-wm-editor] textarea') as HTMLTextAreaElement, 'Make this bold');
     typeInto($('[data-wm-tags]') as HTMLInputElement, 'Copy, UI');
+    ($('[data-wm-priority-option="high"]') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect($('[data-wm-priority-option="high"]')?.getAttribute('aria-checked')).toBe('true'));
     await vi.waitFor(() => expect(save.disabled).toBe(false));
     save.click();
 
@@ -221,6 +307,7 @@ describe('content script', () => {
       label: 'Label for free',
       tags: ['copy', 'ui'],
       status: 'open',
+      priority: 'high',
       anchor: { selector: '#free' },
       hasScreenshot: false,
     });
@@ -247,7 +334,7 @@ describe('content script', () => {
     expect(await getNotesForPage(pageKey())).toHaveLength(0);
   });
 
-  it('focuses a resolved note in edit mode and saves a status change', async () => {
+  it('focuses a found note in edit mode and saves a status change', async () => {
     await saveNote(makeNote('n1', '#card-a', 1));
     await startContentScript();
 
@@ -256,11 +343,44 @@ describe('content script', () => {
     await vi.waitFor(() => expect($('[data-wm-editor="edit"]')).not.toBeNull());
     expect($('[data-wm-outline="flash"]')).not.toBeNull();
     expect(($('[data-wm-editor] textarea') as HTMLTextAreaElement).value).toBe('Body of n1');
+    // All four statuses, the note's own chosen.
+    expect($$('[data-wm-status-option]').map((o) => [o.textContent, o.getAttribute('aria-checked')])).toEqual([
+      ['Open', 'true'],
+      ['In progress', 'false'],
+      ['Completed', 'false'],
+      ['Archived', 'false'],
+    ]);
 
-    ($('[data-wm-status-option="resolved"]') as HTMLButtonElement).click();
+    ($('[data-wm-status-option="completed"]') as HTMLButtonElement).click();
     await vi.waitFor(() => expect(($('[data-wm-save]') as HTMLButtonElement).disabled).toBe(false));
     ($('[data-wm-save]') as HTMLButtonElement).click();
-    await vi.waitFor(async () => expect((await getNotesForPage(pageKey()))[0]?.status).toBe('resolved'));
+    await vi.waitFor(async () => expect((await getNotesForPage(pageKey()))[0]?.status).toBe('completed'));
+    expect((await getNotesForPage(pageKey()))[0]?.priority).toBe('medium');
+  });
+
+  it('moves the status and priority with the arrow keys', async () => {
+    await saveNote(makeNote('n1', '#card-a', 1));
+    await startContentScript();
+    expect(await send({ type: 'wm:focus-note', noteId: 'n1' })).toEqual({ found: true });
+    await vi.waitFor(() => expect($('[data-wm-editor="edit"]')).not.toBeNull());
+
+    // One tab stop per group: the chosen option.
+    expect($$('[data-wm-status-option]').map((o) => o.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1']);
+    const status = $('[data-wm-status]') as HTMLElement;
+    status.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    await vi.waitFor(() => expect(status.getAttribute('data-wm-status')).toBe('in_progress'));
+    expect(shadow().activeElement?.getAttribute('data-wm-status-option')).toBe('in_progress');
+    status.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    await vi.waitFor(() => expect(status.getAttribute('data-wm-status')).toBe('archived'));
+
+    const priority = $('[data-wm-priority]') as HTMLElement;
+    priority.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    await vi.waitFor(() => expect(priority.getAttribute('data-wm-priority')).toBe('low'));
+
+    ($('[data-wm-save]') as HTMLButtonElement).click();
+    await vi.waitFor(async () =>
+      expect(await getNotesForPage(pageKey())).toMatchObject([{ status: 'archived', priority: 'low' }]),
+    );
   });
 
   it('saving an edit keeps changes made elsewhere while the editor was open', async () => {
@@ -269,8 +389,8 @@ describe('content script', () => {
     expect(await send({ type: 'wm:focus-note', noteId: 'n1' })).toEqual({ found: true });
     await vi.waitFor(() => expect($('[data-wm-editor="edit"]')).not.toBeNull());
 
-    // Meanwhile the dashboard resolves and re-tags the note.
-    await updateNote(pageKey(), 'n1', { status: 'resolved', tags: ['data', 'ux'] });
+    // Meanwhile the dashboard completes, re-prioritises and re-tags the note.
+    await updateNote(pageKey(), 'n1', { status: 'completed', priority: 'high', tags: ['data', 'ux'] });
     await vi.waitFor(() => expect($('[data-wm-editor="edit"]')).not.toBeNull());
 
     // Only the text is edited here.
@@ -279,9 +399,24 @@ describe('content script', () => {
     await vi.waitFor(async () => expect((await getNotesForPage(pageKey()))[0]?.body).toBe('Edited in the page'));
     expect((await getNotesForPage(pageKey()))[0]).toMatchObject({
       label: 'Label n1',
-      status: 'resolved',
+      status: 'completed',
+      priority: 'high',
       tags: ['data', 'ux'],
     });
+  });
+
+  it('an edited priority is saved without the status the editor opened with', async () => {
+    await saveNote(makeNote('n1', '#card-a', 1));
+    await startContentScript();
+    expect(await send({ type: 'wm:focus-note', noteId: 'n1' })).toEqual({ found: true });
+    await vi.waitFor(() => expect($('[data-wm-editor="edit"]')).not.toBeNull());
+
+    await updateNote(pageKey(), 'n1', { status: 'in_progress' });
+    ($('[data-wm-priority-option="high"]') as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(($('[data-wm-save]') as HTMLButtonElement).disabled).toBe(false));
+    ($('[data-wm-save]') as HTMLButtonElement).click();
+    await vi.waitFor(async () => expect((await getNotesForPage(pageKey()))[0]?.priority).toBe('high'));
+    expect((await getNotesForPage(pageKey()))[0]).toMatchObject({ status: 'in_progress', body: 'Body of n1' });
   });
 
   it('shows an orphaned note in the floating card', async () => {
@@ -291,6 +426,8 @@ describe('content script', () => {
     expect(await send({ type: 'wm:focus-note', noteId: 'n1' })).toEqual({ found: false });
     await vi.waitFor(() => expect($('[data-wm-orphan-card="n1"]')).not.toBeNull());
     expect($('[data-wm-orphan-card]')?.textContent).toContain("The element for this note isn't on the page right now.");
+    expect($('[data-wm-orphan-card] .wm-card__status')?.textContent).toBe('Open');
+    expect($('[data-wm-orphan-card] .wm-card__priority')?.textContent).toBe('Medium priority');
     expect(await send({ type: 'wm:focus-note', noteId: 'unknown' })).toEqual({ found: false });
   });
 

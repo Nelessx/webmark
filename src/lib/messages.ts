@@ -1,5 +1,6 @@
 import { browser, type Browser } from 'wxt/browser';
 import type { DraftState, EditorEvent, EditorFrameEvent, EditorHelloResponse, EditorRequest } from './editor/protocol';
+import type { NoteStatus } from './types';
 
 /*
  * Typed message protocol between extension contexts.
@@ -26,12 +27,17 @@ export interface PageState {
   title: string;
   pinsVisible: boolean;
   pickerActive: boolean;
-  /** Ids of notes whose element is currently found on the page. */
+  /** Ids of notes whose element is currently found on the page (whatever their status). */
   resolvedIds: string[];
-  /** Ids of notes whose element could not be found on the page. */
+  /**
+   * Ids of notes whose element could not be found on the page. Archived notes
+   * are left out: they get no pin, so nothing is missing for them.
+   */
   orphanedIds: string[];
-  /** Number of notes with status "open" on this page. */
-  openCount: number;
+  /** Notes that still need work (open or in progress): what the toolbar badge shows. */
+  activeCount: number;
+  /** How many of the page's notes have each status. */
+  statusCounts: Record<NoteStatus, number>;
 }
 
 // ---------------------------------------------------------------------------

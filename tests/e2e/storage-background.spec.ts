@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { BrowserContext, Page } from '@playwright/test';
 import type { Browser } from 'wxt/browser';
-import type { Note } from '../../src/lib/types';
+import { NOTE_SCHEMA_VERSION, type Note } from '../../src/lib/types';
 import { getPageKey } from '../../src/lib/url';
 import { expect, test, type Extension } from './fixtures';
 import { dashboard, openDashboard, WebMark } from './webmark';
@@ -22,13 +22,14 @@ function noteFor(url: string, id: string, extra: Partial<Note> = {}): Note {
   const now = Date.now();
   return {
     id,
-    schemaVersion: 1,
+    schemaVersion: NOTE_SCHEMA_VERSION,
     pageKey: getPageKey(url),
     url,
     pageTitle: 'Seeded page',
     label: `Seeded ${id}`,
     body: `Body of ${id}`,
     status: 'open',
+    priority: 'medium',
     tags: [],
     author: '',
     anchor: {
@@ -179,7 +180,7 @@ test.describe('storage in the background', () => {
     await expect(cardImage(options, note.id)).toHaveAttribute('src', jpeg);
   });
 
-  test('bulk resolve in the dashboard writes each page once', async ({ context, ext, server }) => {
+  test('bulk status and priority changes in the dashboard write each page once', async ({ context, ext, server }) => {
     const options = await openExtensionPage(context, ext, 'options.html');
     const urlA = server.url('/dashboard.html');
     const urlB = server.url('/widgets.html');
@@ -199,16 +200,27 @@ test.describe('storage in the background', () => {
     await cards.first().getByRole('checkbox').check();
     const bulk = options.getByRole('toolbar', { name: 'Bulk actions' });
     await bulk.getByRole('button', { name: 'Select all 5' }).click();
-    await bulk.getByRole('button', { name: 'Resolve' }).click();
-    await expect(options.getByText('5 notes · 0 open · 2 pages')).toBeVisible();
+    await bulk.getByRole('button', { name: 'Set status' }).click();
+    await bulk.getByRole('menuitem', { name: 'In progress' }).click();
+    const summary = options.getByRole('list', { name: 'Summary' });
+    await expect(summary.getByRole('listitem').nth(1)).toHaveText('5 in progress');
 
     const changes = await options.evaluate(() => (window as unknown as { __changes: string[][] }).__changes);
     const writesOf = (url: string) => changes.filter((keys) => keys.includes(`wm:notes:${getPageKey(url)}`)).length;
     expect(writesOf(urlA)).toBe(1);
     expect(writesOf(urlB)).toBe(1);
-    expect([...(await ext.notes(getPageKey(urlA))), ...(await ext.notes(getPageKey(urlB)))].map((n) => n.status)).toEqual(
-      Array(5).fill('resolved'),
-    );
+    const stored = async () => [...(await ext.notes(getPageKey(urlA))), ...(await ext.notes(getPageKey(urlB)))];
+    expect((await stored()).map((n) => n.status)).toEqual(Array(5).fill('in_progress'));
+
+    // The same for a priority: one more write per page.
+    await bulk.getByRole('button', { name: 'Set priority' }).click();
+    await bulk.getByRole('menuitem', { name: 'High' }).click();
+    await expect(summary.getByRole('listitem').last()).toHaveText('5 high priority');
+    const after = await options.evaluate(() => (window as unknown as { __changes: string[][] }).__changes);
+    const writesAfter = (url: string) => after.filter((keys) => keys.includes(`wm:notes:${getPageKey(url)}`)).length;
+    expect(writesAfter(urlA)).toBe(2);
+    expect(writesAfter(urlB)).toBe(2);
+    expect((await stored()).map((n) => [n.status, n.priority])).toEqual(Array(5).fill(['in_progress', 'high']));
   });
 
   test('import refuses a file whose note shows one site but links to another', async ({ context, ext }) => {

@@ -1,14 +1,16 @@
 import { formatRelativeTime } from '../format';
+import { DEFAULT_PRIORITY } from '../noteMeta';
 import type { Note } from '../types';
 import type { EditorFields } from './protocol';
 
-/** The form's values for a new note (no `note`) or an existing one. */
+/** The form's values for a new note (no `note`: open, default priority) or an existing one. */
 export function initialFields(label: string, note: Note | undefined): EditorFields {
   return {
     label,
     body: note?.body ?? '',
     tags: note?.tags.join(', ') ?? '',
     status: note?.status ?? 'open',
+    priority: note?.priority ?? DEFAULT_PRIORITY,
   };
 }
 

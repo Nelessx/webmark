@@ -1,10 +1,36 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type Ref } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type Ref,
+} from 'react';
+import { PriorityIcon } from '@/components/PriorityIcon';
 import { sameFields, type EditedFields, type EditorDraft, type EditorFields } from '@/lib/editor/protocol';
 import { editedFields, toDraft } from '@/lib/editor/save';
+import { NOTE_PRIORITIES, NOTE_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
+import type { NotePriority, NoteStatus } from '@/lib/types';
+import { ChoiceGroup, type Choice } from './ChoiceGroup';
 import { EditorFooter, type ConfirmState } from './EditorFooter';
 
 const TEXTAREA_MAX_HEIGHT = 240;
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+const STATUS_CHOICES: readonly Choice<NoteStatus>[] = NOTE_STATUSES.map((status) => ({
+  value: status,
+  label: STATUS_LABELS[status],
+  icon: <span className="wm-editor__dot" data-status={status} aria-hidden="true" />,
+}));
+
+/** Low to high, left to right: a scale. */
+const PRIORITY_CHOICES: readonly Choice<NotePriority>[] = [...NOTE_PRIORITIES].reverse().map((priority) => ({
+  value: priority,
+  label: PRIORITY_LABELS[priority],
+  icon: <PriorityIcon priority={priority} />,
+}));
 
 export interface EditorFormProps {
   mode: 'create' | 'edit';
@@ -37,7 +63,10 @@ export interface EditorFormProps {
   onValuesChange?(values: EditorFields): void;
 }
 
-/** The note form: label, body, tags, status (edit), actions, and inline confirmations. */
+/**
+ * The note form: label, body, tags, status (edit only: a new note starts
+ * open), priority, actions, and inline confirmations.
+ */
 export function EditorForm(props: EditorFormProps) {
   const { mode, initial, nudge, onDirtyChange, onValuesChange } = props;
   const [values, setValues] = useState<EditorFields>(() => props.start ?? initial);
@@ -45,6 +74,7 @@ export function EditorForm(props: EditorFormProps) {
   const [saving, setSaving] = useState(false);
   const [shaking, setShaking] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const id = useId();
 
   const dirty = !sameFields(values, initial);
   const canSave = values.body.trim().length > 0 && !saving;
@@ -158,23 +188,34 @@ export function EditorForm(props: EditorFormProps) {
         aria-label="Tags"
       />
 
-      {isEdit && (
-        <div className="wm-segmented" role="radiogroup" aria-label="Status" data-wm-status={values.status}>
-          {(['open', 'resolved'] as const).map((status) => (
-            <button
-              key={status}
-              type="button"
-              role="radio"
-              aria-checked={values.status === status}
-              className="wm-segmented__option"
-              data-wm-status-option={status}
-              onClick={() => set('status', status)}
-            >
-              {status === 'open' ? 'Open' : 'Resolved'}
-            </button>
-          ))}
+      <div className="wm-editor__props">
+        {isEdit && (
+          <div className="wm-editor__prop">
+            <span className="wm-editor__prop-label" id={`${id}-status`}>
+              Status
+            </span>
+            <ChoiceGroup
+              name="status"
+              labelledBy={`${id}-status`}
+              choices={STATUS_CHOICES}
+              value={values.status}
+              onChange={(status) => set('status', status)}
+            />
+          </div>
+        )}
+        <div className="wm-editor__prop">
+          <span className="wm-editor__prop-label" id={`${id}-priority`}>
+            Priority
+          </span>
+          <ChoiceGroup
+            name="priority"
+            labelledBy={`${id}-priority`}
+            choices={PRIORITY_CHOICES}
+            value={values.priority}
+            onChange={(priority) => set('priority', priority)}
+          />
         </div>
-      )}
+      </div>
 
       {props.meta && <div className="wm-editor__meta">{props.meta}</div>}
 

@@ -1,4 +1,5 @@
 import type { DraftState, EditorPage } from '@/lib/editor/protocol';
+import { isArchivedStatus } from '@/lib/noteMeta';
 import { DEFAULT_SETTINGS, type ElementAnchor, type Note, type Settings } from '@/lib/types';
 import type { FocusableElement } from './dom';
 
@@ -97,8 +98,9 @@ export interface AppState {
   editor: EditorSession | null;
   /** Bumped to make the open editor grab focus and shake (e.g. "finish this note first"). */
   editorNudge: number;
-  /** Note shown in the floating "element not found" card. */
+  /** Note shown in the floating "element not found" card (never an archived one). */
   orphanNoteId: string | null;
+  /** Note whose pin is hovered or focused (archived notes have no pin). */
   hoverNoteId: string | null;
   flash: { id: number; element: Element } | null;
   toasts: Toast[];
@@ -136,10 +138,20 @@ export function findNote(state: AppState, noteId: string | null | undefined): No
   return noteId ? state.notes.find((n) => n.id === noteId) : undefined;
 }
 
+/** Notes that get a pin when their element is found: every note but archived ones. */
+export function hasPin(note: Note): boolean {
+  return !isArchivedStatus(note.status);
+}
+
 /** Page elements the layout tracker must measure for the current UI. */
 export function selectLayoutTargets(s: AppState): Element[] {
   const targets = new Set<Element>();
-  if (s.settings.pinsVisible) s.resolved.forEach((el) => targets.add(el));
+  if (s.settings.pinsVisible) {
+    for (const note of s.notes) {
+      const el = hasPin(note) ? s.resolved.get(note.id) : undefined;
+      if (el) targets.add(el);
+    }
+  }
   const hovered = s.hoverNoteId ? s.resolved.get(s.hoverNoteId) : undefined;
   if (hovered) targets.add(hovered);
   if (s.editor?.target) targets.add(s.editor.target);

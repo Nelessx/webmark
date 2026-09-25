@@ -1,5 +1,6 @@
 import { browser, type Browser, type PublicPath } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { badgeText } from '@/lib/badge';
 import { captureElement } from '@/lib/capture';
 import { getActionApi, getMenusApi, openDashboard } from '@/lib/compat';
 import { handleEditorMessage } from '@/lib/editor/handler';
@@ -303,20 +304,19 @@ async function handlePageState(state: PageState, sender: Sender): Promise<{ ok: 
   const tabId = sender.tab?.id;
   if (tabId === undefined || tabId < 0) return { ok: false };
   if (sender.frameId !== undefined && sender.frameId !== 0) return { ok: false };
-  await showOpenCount(tabId, state.openCount);
+  await showCount(tabId, badgeText(state));
   return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
-// Toolbar badge (per tab)
+// Toolbar badge (per tab): notes that still need work, see badgeText()
 // ---------------------------------------------------------------------------
 
 /** Last count text per tab, so a warning flash can restore it. */
 const badgeTexts = new Map<number, string>();
 const warningTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
-async function showOpenCount(tabId: number, openCount: number): Promise<void> {
-  const text = Number.isFinite(openCount) && openCount > 0 ? String(Math.floor(openCount)) : '';
+async function showCount(tabId: number, text: string): Promise<void> {
   badgeTexts.set(tabId, text);
   // The warning restores the latest count when it ends.
   if (warningTimers.has(tabId)) return;
@@ -368,7 +368,7 @@ async function flashWarningBadge(tabId: number): Promise<void> {
 function onTabUpdated(tabId: number, changeInfo: Browser.tabs.OnUpdatedInfo): void {
   if (changeInfo.status !== 'loading') return;
   // The content script of the new page reports fresh state; until then show nothing.
-  void showOpenCount(tabId, 0);
+  void showCount(tabId, '');
   setTimeout(() => void refreshBadge(tabId), BADGE_REFRESH_DELAY_MS);
 }
 
@@ -387,7 +387,7 @@ async function refreshBadge(tabId: number): Promise<void> {
   } catch {
     return;
   }
-  if (tab.url && getPageKey(tab.url) === state.pageKey) await showOpenCount(tabId, state.openCount);
+  if (tab.url && getPageKey(tab.url) === state.pageKey) await showCount(tabId, badgeText(state));
 }
 
 function forgetTab(tabId: number): void {

@@ -1,5 +1,6 @@
 import { browser, type Browser, type PublicPath } from 'wxt/browser';
 import { listen } from './messages';
+import { DEFAULT_PRIORITY, isNotePriority, normalizeStatus } from './noteMeta';
 import * as shotDb from './screenshotDb';
 import { checkStorageRequest, isStorageRequest, STORAGE_REQUEST, type StorageRequest } from './storageRequests';
 import { DEFAULT_SETTINGS, NOTE_SCHEMA_VERSION, type Note, type NotePatch, type Settings } from './types';
@@ -84,7 +85,9 @@ function migrate(note: Note): Note {
     ...note,
     tags: note.tags ?? [],
     author: note.author ?? '',
-    status: note.status ?? 'open',
+    // Schema 1 had 'open' | 'resolved' and no priority.
+    status: normalizeStatus(note.status) ?? 'open',
+    priority: isNotePriority(note.priority) ? note.priority : DEFAULT_PRIORITY,
     hasScreenshot: note.hasScreenshot ?? false,
     schemaVersion: NOTE_SCHEMA_VERSION,
   };

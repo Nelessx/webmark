@@ -45,6 +45,7 @@ function makeNote(overrides: Partial<Note> = {}): Note {
     label: 'Dashboard → Revenue Card',
     body: `Note ${seq}`,
     status: 'open',
+    priority: 'medium',
     tags: [],
     author: '',
     anchor: {
@@ -137,6 +138,21 @@ describe('notes per page', () => {
     expect(note).toMatchObject({ tags: [], author: '', hasScreenshot: false, schemaVersion: NOTE_SCHEMA_VERSION });
   });
 
+  it("reads schema-1 notes with today's statuses and a default priority", async () => {
+    // Untyped: 'resolved' is no longer a NoteStatus.
+    const resolved: Record<string, unknown> = { ...makeNote({ id: 'done', createdAt: 1 }), schemaVersion: 1, status: 'resolved' };
+    const open: Record<string, unknown> = { ...makeNote({ id: 'todo', createdAt: 2 }), schemaVersion: 1 };
+    delete resolved.priority;
+    delete open.priority;
+    await fakeBrowser.storage.local.set({ 'wm:pages': [PAGE_A], [`wm:notes:${PAGE_A}`]: [resolved, open] });
+
+    const notes = await getNotesForPage(PAGE_A);
+    expect(notes.map((n) => [n.id, n.status, n.priority])).toEqual([
+      ['done', 'completed', 'medium'],
+      ['todo', 'open', 'medium'],
+    ]);
+  });
+
   it('creates unique ids', () => {
     const ids = new Set(Array.from({ length: 50 }, createNoteId));
     expect(ids.size).toBe(50);
@@ -149,9 +165,9 @@ describe('updateNote', () => {
     await saveNote(note);
     vi.spyOn(Date, 'now').mockReturnValue(5_000);
 
-    const updated = await updateNote(PAGE_A, 'x', { status: 'resolved', tags: ['bug'] });
+    const updated = await updateNote(PAGE_A, 'x', { status: 'completed', tags: ['bug'] });
 
-    expect(updated).toMatchObject({ status: 'resolved', tags: ['bug'], updatedAt: 5_000, createdAt: 1_000 });
+    expect(updated).toMatchObject({ status: 'completed', tags: ['bug'], updatedAt: 5_000, createdAt: 1_000 });
     expect(await getNote(PAGE_A, 'x')).toEqual(updated);
   });
 
@@ -556,18 +572,18 @@ describe('batch writes', () => {
     vi.spyOn(Date, 'now').mockReturnValue(9_000);
 
     const results = await updateNotes([
-      { pageKey: PAGE_B, noteId: 'b1', patch: { status: 'resolved' } },
-      { pageKey: PAGE_A, noteId: 'a1', patch: { status: 'resolved', tags: undefined } },
-      { pageKey: PAGE_A, noteId: 'gone', patch: { status: 'resolved' } },
+      { pageKey: PAGE_B, noteId: 'b1', patch: { status: 'completed' } },
+      { pageKey: PAGE_A, noteId: 'a1', patch: { status: 'completed', tags: undefined } },
+      { pageKey: PAGE_A, noteId: 'gone', patch: { status: 'completed' } },
       { pageKey: PAGE_A, noteId: 'a2', patch: { body: 'edited' } },
     ]);
 
     expect(results.map((n) => n?.id)).toEqual(['b1', 'a1', undefined, 'a2']);
     expect(set).toHaveBeenCalledTimes(1);
     expect(events).toEqual([[PAGE_A, PAGE_B].sort()]);
-    expect(await getNote(PAGE_A, 'a1')).toMatchObject({ status: 'resolved', tags: [], updatedAt: 9_000 });
+    expect(await getNote(PAGE_A, 'a1')).toMatchObject({ status: 'completed', tags: [], updatedAt: 9_000 });
     expect(await getNote(PAGE_A, 'a2')).toMatchObject({ status: 'open', body: 'edited' });
-    expect((await getNote(PAGE_B, 'b1'))?.status).toBe('resolved');
+    expect((await getNote(PAGE_B, 'b1'))?.status).toBe('completed');
   });
 
   it('updateNotes with nothing to change does not write', async () => {

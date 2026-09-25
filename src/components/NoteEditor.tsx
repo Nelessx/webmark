@@ -1,7 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { parseTags } from '@/lib/format';
 import { NOTE_LIMITS } from '@/lib/limits';
-import type { Note, NotePatch } from '@/lib/types';
+import { isNotePriority, isNoteStatus, NOTE_PRIORITIES, NOTE_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
+import type { Note, NotePatch, NotePriority, NoteStatus } from '@/lib/types';
 import { Button } from './Button';
 import { IconCheck } from './icons';
 import { Kbd } from './Kbd';
@@ -25,15 +26,23 @@ function safeParseTags(input: string, fallback: string[]): string[] {
   }
 }
 
-/** Inline edit form for a note: label, body, tags. Ctrl/Cmd+Enter saves, Esc cancels. */
+/** Inline edit form for a note: label, body, tags, status, priority. Ctrl/Cmd+Enter saves, Esc cancels. */
 export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
   // Changes are measured against the note as the form opened with it, not the
   // live `note`: if the note is edited elsewhere meanwhile (say, on the page),
   // fields untouched here must not be written back with their old values.
-  const [initial] = useState(() => ({ label: note.label, body: note.body, tags: note.tags }));
+  const [initial] = useState(() => ({
+    label: note.label,
+    body: note.body,
+    tags: note.tags,
+    status: note.status,
+    priority: note.priority,
+  }));
   const [label, setLabel] = useState(initial.label);
   const [body, setBody] = useState(initial.body);
   const [tags, setTags] = useState(initial.tags.join(', '));
+  const [status, setStatus] = useState<NoteStatus>(initial.status);
+  const [priority, setPriority] = useState<NotePriority>(initial.priority);
   const [saving, setSaving] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const id = useId();
@@ -66,6 +75,8 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
     if (nextBody !== initial.body) patch.body = nextBody;
     const nextTags = safeParseTags(tags, initial.tags);
     if (!sameTags(nextTags, initial.tags)) patch.tags = nextTags;
+    if (status !== initial.status) patch.status = status;
+    if (priority !== initial.priority) patch.priority = priority;
     if (!Object.keys(patch).length) {
       onCancel();
       return;
@@ -146,6 +157,42 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
         <span id={`${id}-tags-hint`} className="wm-field__hint">
           Separate tags with commas
         </span>
+      </div>
+      <div className="wm-note-editor__row">
+        <div className="wm-field">
+          <label className="wm-field__label" htmlFor={`${id}-status`}>
+            Status
+          </label>
+          <select
+            id={`${id}-status`}
+            className="wm-input wm-select"
+            value={status}
+            onChange={(e) => isNoteStatus(e.target.value) && setStatus(e.target.value)}
+          >
+            {NOTE_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {STATUS_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="wm-field">
+          <label className="wm-field__label" htmlFor={`${id}-priority`}>
+            Priority
+          </label>
+          <select
+            id={`${id}-priority`}
+            className="wm-input wm-select"
+            value={priority}
+            onChange={(e) => isNotePriority(e.target.value) && setPriority(e.target.value)}
+          >
+            {NOTE_PRIORITIES.map((value) => (
+              <option key={value} value={value}>
+                {PRIORITY_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="wm-note-editor__actions">
         <span className="wm-note-editor__hint">

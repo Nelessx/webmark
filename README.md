@@ -9,16 +9,16 @@ It is built for developers collecting client feedback, QA testers, designers and
 ## Features
 
 - **Element picker:** hover to highlight, move to the parent or child element with the arrow keys, click or press Enter to select.
-- **Note editor:** a popover next to the element. Notes are plain text and carry tags and an open/resolved status.
-- **Numbered pins** on annotated elements. `#3` refers to the same note on the page, in the popup, in the side panel and in reports.
+- **Note editor:** a popover next to the element. Notes are plain text and carry tags, a status (Open, In progress, Completed, Archived) and a priority (Low, Medium, High). Archived notes are put away: no pin on the page, and listed only under the Archived filter.
+- **Numbered pins** on annotated elements, coloured by status, with a red dot for high priority. `#3` refers to the same note on the page, in the popup, in the side panel and in reports.
 - **Reliable anchoring:** each note stores several ways to find its element again (selector, XPath, attributes, text, position), so it survives most redesigns. Notes whose element cannot be found are listed as *orphaned* rather than lost.
 - **Single-page app support:** pins update when the URL changes without a full page load.
 - **Screenshots (optional):** a cropped screenshot of the element is saved with each new note.
 - **Popup:** quick actions and the notes on the current page.
-- **Side panel:** the current page's notes with search, filters and editing.
-- **Dashboard:** every note on every site, with search, filters, bulk actions, export, import, settings and a welcome guide.
-- **Export and import:** JSON (full backup, optionally with screenshots), a Markdown report and CSV.
-- **Toolbar badge** showing how many notes on the current page are open.
+- **Side panel:** the current page's notes with search, status, priority and tag filters, and editing.
+- **Dashboard:** every note on every site, with search, filters, sorting, bulk actions (status, priority, report, delete), export, import, settings and a welcome guide.
+- **Export and import:** JSON (full backup, optionally with screenshots), a Markdown report and CSV. Reports and CSV hold the notes the list shows; a backup holds every note.
+- **Toolbar badge** showing how many notes on the current page still need work (open or in progress).
 
 ## Install and run
 
@@ -72,7 +72,7 @@ Built with [WXT](https://wxt.dev) (source in `src/`), React 19 and TypeScript. A
 |---|---|
 | `content/index.tsx` | Runs on every page: element picker, note editor popover, numbered pins, orphaned-note handling, single-page app navigation. The only handler of `ContentMessage`s. |
 | `note-editor/` | The note form, an extension page the content script frames inside its closed shadow root (`/note-editor.html`), so the page never sees what is typed. See `lib/editor/protocol.ts`. |
-| `background.ts` | Context menu, keyboard shortcuts, screenshot capture and cropping, toolbar badge (open-note count), re-injection into already-open tabs on install. The only responder to `BackgroundMessage`s. |
+| `background.ts` | Context menu, keyboard shortcuts, screenshot capture and cropping, toolbar badge (count of open and in-progress notes), re-injection into already-open tabs on install. The only responder to `BackgroundMessage`s. |
 | `popup/` | Toolbar popup: quick actions and the current page's notes. |
 | `sidepanel/` | Side panel (Chromium) / sidebar (Firefox): the current page's notes with search, filters and editing. |
 | `options/` | The dashboard, opened in a tab at `/options.html`: all notes, search, filters, bulk actions, export and import, settings, welcome guide. |
@@ -82,6 +82,8 @@ Built with [WXT](https://wxt.dev) (source in `src/`), React 19 and TypeScript. A
 | Module | Role |
 |---|---|
 | `types.ts` | Data model: `Note`, `ElementAnchor`, `NotePatch`, `Settings`, `NOTE_SCHEMA_VERSION`. |
+| `noteMeta.ts` | Note statuses and priorities: their order, labels and helpers, shared by every surface and export. |
+| `badge.ts` | The toolbar badge text: the page's notes that still need work. |
 | `url.ts` | `getPageKey()` normalises a URL into the key notes are stored under (drops tracking params, keeps hash routes like `#/…`); `canRunOn()` says whether a URL can host the content script. |
 | `storage.ts` | All reads and writes of notes, screenshots and settings. Writes run in the background (the single writer), with a write queue, migrations and change listeners. |
 | `messages.ts` | Typed message protocol between the content script, the background and extension pages. |

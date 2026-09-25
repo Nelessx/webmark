@@ -1,3 +1,4 @@
+import { isNotePriority, isNoteStatus } from '../noteMeta';
 import type { DraftState, EditorFields, EditorFrameEvent, EditorPage, EditorRequest } from './protocol';
 
 /*
@@ -19,7 +20,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const isText = (value: unknown, max = MAX_TEXT): value is string => typeof value === 'string' && value.length <= max;
 const isOptional = (check: Check) => (value: unknown) => value === undefined || check(value);
-const isStatus: Check = (value) => value === 'open' || value === 'resolved';
+const isStatus: Check = isNoteStatus;
+const isPriority: Check = isNotePriority;
 const isId: Check = (value) => isText(value, 200) && value !== '';
 const isScreenshot: Check = (value) =>
   isText(value, MAX_SCREENSHOT) && /^data:image\/(png|jpe?g|webp);base64,/i.test(value);
@@ -29,7 +31,7 @@ function hasFields(value: unknown, fields: Readonly<Record<string, Check>>): val
 }
 
 export function isEditorFields(value: unknown): value is EditorFields {
-  return hasFields(value, { label: isText, body: isText, tags: isText, status: isStatus });
+  return hasFields(value, { label: isText, body: isText, tags: isText, status: isStatus, priority: isPriority });
 }
 
 export function isDraftState(value: unknown): value is DraftState {

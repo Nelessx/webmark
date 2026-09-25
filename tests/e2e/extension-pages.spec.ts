@@ -57,7 +57,7 @@ test.describe('extension pages', () => {
     await expect(wm.pickerHint).toBeHidden();
   });
 
-  test('All notes: list, search, status filter, bulk resolve, JSON export, settings, welcome', async ({
+  test('All notes: list, search, status filter, bulk status, JSON export, settings, welcome', async ({
     context,
     page,
     ext,
@@ -74,8 +74,16 @@ test.describe('extension pages', () => {
     await options.goto(ext.url('options.html'));
     const cards = options.locator('article.wm-note-card');
     const cardFor = (id: string) => options.locator(`article[data-note-id="${id}"]`);
+    const summary = options.getByRole('list', { name: 'Summary' });
     await expect(cards).toHaveCount(3);
-    await expect(options.getByText('3 notes · 3 open · 1 pages')).toBeVisible();
+    await expect(options.getByText('3 notes on 1 page')).toBeVisible();
+    await expect(summary.getByRole('listitem')).toHaveText([
+      '3 open',
+      '0 in progress',
+      '0 completed',
+      '0 archived',
+      '0 high priority',
+    ]);
     await expect(options.getByRole('heading', { level: 2, name: 'Acme Analytics · Dashboard' })).toBeVisible();
     await expect(cardFor(revenue.id)).toContainText('Revenue excludes refunds');
     await expect(cardFor(revenue.id).getByRole('button', { name: /Enlarge screenshot/ }).locator('img')).toBeVisible();
@@ -91,11 +99,13 @@ test.describe('extension pages', () => {
     await search.fill('');
     await expect(cards).toHaveCount(3);
 
-    // Resolve one from its card, then filter by status.
-    await cardFor(users.id).getByRole('button', { name: 'Mark as resolved' }).click();
-    await expect.poll(async () => (await ext.note(page, users.id))?.status).toBe('resolved');
+    // Complete one from its card's status menu, then filter by status.
+    await cardFor(users.id).getByRole('button', { name: 'Status: Open' }).click();
+    await options.getByRole('menuitemradio', { name: 'Completed' }).click();
+    await expect.poll(async () => (await ext.note(page, users.id))?.status).toBe('completed');
+    await expect(cardFor(users.id).getByRole('button', { name: 'Status: Completed' })).toBeVisible();
     const status = options.getByRole('radiogroup', { name: 'Filter by status' });
-    await status.getByRole('radio', { name: /Resolved/ }).click();
+    await status.getByRole('radio', { name: /Completed/ }).click();
     await expect(cards).toHaveCount(1);
     await expect(cards).toHaveAttribute('data-note-id', users.id);
     await status.getByRole('radio', { name: /Open/ }).click();
@@ -103,17 +113,19 @@ test.describe('extension pages', () => {
     await status.getByRole('radio', { name: /All/ }).click();
     await expect(cards).toHaveCount(3);
 
-    // Bulk resolve the two open notes.
+    // Bulk-complete the two open notes.
     await cardFor(revenue.id).getByRole('checkbox').check();
     await cardFor(row.id).getByRole('checkbox').check();
     const bulk = options.getByRole('toolbar', { name: 'Bulk actions' });
     await expect(bulk).toContainText('2 selected');
-    await bulk.getByRole('button', { name: 'Resolve' }).click();
-    await expect.poll(async () => (await ext.notes(page)).map((n) => n.status)).toEqual(['resolved', 'resolved', 'resolved']);
-    await expect(options.getByText('3 notes · 0 open · 1 pages')).toBeVisible();
+    await bulk.getByRole('button', { name: 'Set status' }).click();
+    await bulk.getByRole('menuitem', { name: 'Completed' }).click();
+    await expect.poll(async () => (await ext.notes(page)).map((n) => n.status)).toEqual(['completed', 'completed', 'completed']);
+    await expect(summary.getByRole('listitem').first()).toHaveText('0 open');
+    await expect(summary.getByRole('listitem').nth(2)).toHaveText('3 completed');
     // The page's pins follow (pins are drawn for on-screen elements).
     await d.card('Revenue').scrollIntoViewIfNeeded();
-    await expect(wm.pin(revenue.id)).toHaveAttribute('data-status', 'resolved');
+    await expect(wm.pin(revenue.id)).toHaveAttribute('data-status', 'completed');
 
     // JSON backup export.
     await options.getByRole('combobox', { name: 'Export format' }).selectOption('json');
@@ -172,13 +184,17 @@ test.describe('extension pages', () => {
     const editor = wm.editor('edit');
     await expect(editor).toBeVisible();
 
-    // ...while it gets resolved in the dashboard.
+    // ...while it gets started and made high priority in the dashboard.
     const options = await context.newPage();
     await options.goto(ext.url('options.html'));
-    await options.locator(`article[data-note-id="${note.id}"]`).getByRole('button', { name: 'Mark as resolved' }).click();
-    await expect.poll(async () => (await ext.note(page, note.id))?.status).toBe('resolved');
+    const card = options.locator(`article[data-note-id="${note.id}"]`);
+    await card.getByRole('button', { name: 'Start' }).click();
+    await expect.poll(async () => (await ext.note(page, note.id))?.status).toBe('in_progress');
+    await card.getByRole('button', { name: 'Priority: Medium' }).click();
+    await options.getByRole('menuitemradio', { name: 'High' }).click();
+    await expect.poll(async () => (await ext.note(page, note.id))?.priority).toBe('high');
 
-    // Back in the page only the text is edited: the resolution must survive the save.
+    // Back in the page only the text is edited: the status and priority must survive the save.
     await page.bringToFront();
     await editor.locator('[data-wm-body]').click();
     await page.keyboard.press('Control+A');
@@ -186,7 +202,12 @@ test.describe('extension pages', () => {
     await page.keyboard.press('Control+Enter');
     await expect(editor).toBeHidden();
     await expect.poll(async () => (await ext.note(page, note.id))?.body).toBe('Better wording');
-    expect(await ext.note(page, note.id)).toMatchObject({ status: 'resolved', tags: ['data'], label: note.label });
+    expect(await ext.note(page, note.id)).toMatchObject({
+      status: 'in_progress',
+      priority: 'high',
+      tags: ['data'],
+      label: note.label,
+    });
   });
 
   test('saving the dashboard editor keeps changes made in the page meanwhile', async ({ context, page, ext, server }) => {

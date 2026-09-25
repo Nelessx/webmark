@@ -1,4 +1,4 @@
-import type { ElementAnchor, Note, NoteStatus } from '../types';
+import type { ElementAnchor, Note, NotePriority, NoteStatus } from '../types';
 
 /*
  * The isolated note editor. The form runs in an extension page
@@ -33,7 +33,9 @@ export interface EditorFields {
   label: string;
   body: string;
   tags: string;
+  /** Shown for an existing note only: a new note starts 'open'. */
   status: NoteStatus;
+  priority: NotePriority;
 }
 
 /** What a save writes: trimmed values with parsed tags. */
@@ -42,6 +44,7 @@ export interface EditorDraft {
   body: string;
   tags: string[];
   status: NoteStatus;
+  priority: NotePriority;
 }
 
 /** The draft fields the user changed in this editor session; an edit writes only those. */
@@ -120,5 +123,7 @@ export function isEditorToken(value: unknown): value is string {
 }
 
 export function sameFields(a: EditorFields, b: EditorFields): boolean {
-  return a.label === b.label && a.body === b.body && a.tags === b.tags && a.status === b.status;
+  return (
+    a.label === b.label && a.body === b.body && a.tags === b.tags && a.status === b.status && a.priority === b.priority
+  );
 }

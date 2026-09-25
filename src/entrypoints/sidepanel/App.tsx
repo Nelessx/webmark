@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Button } from '@/components/Button';
 import { useCommandShortcut, useSettings, useToast } from '@/components/hooks';
 import { IconCopy, IconLayoutGrid, IconPlus } from '@/components/icons';
@@ -11,6 +12,7 @@ import { openDashboard } from '@/lib/compat';
 import { DEFAULT_SHORTCUTS } from '@/lib/constants';
 import { notesToMarkdownReport } from '@/lib/format';
 import { sendToTab } from '@/lib/messages';
+import { isArchivedStatus } from '@/lib/noteMeta';
 import { displayPageKey } from '@/lib/url';
 import { EmptyPage } from './EmptyPage';
 import { NotesView } from './NotesView';
@@ -23,6 +25,8 @@ export function App() {
   const shortcut = useCommandShortcut('start-picker', DEFAULT_SHORTCUTS.startPicker);
   const toast = useToast();
   const canPick = page.status === 'ready';
+  // The report leaves archived notes out, like the lists.
+  const reported = useMemo(() => page.notes.filter((n) => !isArchivedStatus(n.status)), [page.notes]);
 
   const startPicker = async () => {
     if (page.tabId === undefined) return;
@@ -37,7 +41,8 @@ export function App() {
     let ok = false;
     try {
       const title = page.title || (page.pageKey ? displayPageKey(page.pageKey) : undefined);
-      ok = await copyText(notesToMarkdownReport(page.notes, { title }));
+      // All page notes number the pins, so "#3" matches pin 3 even with archived notes left out.
+      ok = await copyText(notesToMarkdownReport(reported, { title, allNotes: page.notes }));
     } catch {
       ok = false;
     }
@@ -126,7 +131,7 @@ export function App() {
           size="sm"
           icon={<IconCopy size={14} />}
           onClick={() => void copyReport()}
-          disabled={!page.notes.length}
+          disabled={!reported.length}
         >
           Copy page report
         </Button>

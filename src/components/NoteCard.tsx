@@ -1,18 +1,29 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { formatRelativeTime, noteToMarkdown } from '@/lib/format';
-import type { Note, NotePatch } from '@/lib/types';
+import { PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
+import type { Note, NotePatch, NotePriority, NoteStatus } from '@/lib/types';
 import { displayPageKey, siteOf } from '@/lib/url';
 import { IconButton } from './Button';
 import { ConfirmButton } from './ConfirmButton';
 import { cx } from './cx';
 import { useNow, useToast } from './hooks';
-import { IconAlertTriangle, IconCheck, IconCopy, IconCrosshair, IconPencil, IconRotateCcw, IconTrash } from './icons';
+import {
+  IconAlertTriangle,
+  IconArchiveRestore,
+  IconCheck,
+  IconCopy,
+  IconCrosshair,
+  IconPencil,
+  IconPlay,
+  IconRotateCcw,
+  IconTrash,
+} from './icons';
 import { NoteBody } from './NoteBody';
 import { NoteEditor } from './NoteEditor';
+import { PriorityMenu, StatusMenu } from './NoteMenus';
 import { PinBadge } from './PinBadge';
 import { copyText } from './platform';
 import { ScreenshotThumb } from './ScreenshotThumb';
-import { StatusBadge } from './StatusBadge';
 import { TagList } from './TagList';
 
 export interface NoteCardProps {
@@ -44,6 +55,21 @@ export interface NoteCardProps {
   className?: string;
 }
 
+interface NextStep {
+  status: NoteStatus;
+  /** Accessible name of the one-click action. */
+  label: string;
+  icon: ReactNode;
+}
+
+/** The one-click step from each status; any other status is two clicks away in the status menu. */
+const NEXT_STEP: Readonly<Record<NoteStatus, NextStep>> = {
+  open: { status: 'in_progress', label: 'Start', icon: <IconPlay /> },
+  in_progress: { status: 'completed', label: 'Complete', icon: <IconCheck /> },
+  completed: { status: 'open', label: 'Reopen', icon: <IconRotateCcw /> },
+  archived: { status: 'open', label: 'Unarchive', icon: <IconArchiveRestore /> },
+};
+
 function relativeTime(timestamp: number, now: number): string {
   try {
     return formatRelativeTime(timestamp, now);
@@ -53,9 +79,10 @@ function relativeTime(timestamp: number, now: number): string {
 }
 
 /**
- * One note: label, body, tags, screenshot, meta and actions (locate,
- * resolve/reopen, copy as Markdown, edit inline, delete). Shows its own toasts
- * for these actions, so callers should not toast again.
+ * One note: label, status and priority (each a menu), body, tags, screenshot,
+ * meta and actions (next status step, locate, copy as Markdown, edit inline,
+ * delete). Shows its own toasts for these actions, so callers should not
+ * toast again.
  */
 export function NoteCard({
   note,
@@ -81,8 +108,8 @@ export function NoteCard({
   const toast = useToast();
   const now = useNow();
   const headingId = useId();
-  const resolved = note.status === 'resolved';
   const pinText = pinNumber ? `#${pinNumber}` : '';
+  const next = NEXT_STEP[note.status];
 
   // Return focus to the Edit button when the inline editor closes.
   useEffect(() => {
@@ -104,10 +131,14 @@ export function NoteCard({
     }
   };
 
-  const toggleStatus = () => {
-    void update({ status: resolved ? 'open' : 'resolved' }, resolved ? 'Note reopened' : 'Marked as resolved').catch(
-      () => undefined,
-    );
+  const setStatus = (status: NoteStatus) => {
+    if (status === note.status) return;
+    void update({ status }, `Status set to ${STATUS_LABELS[status]}`).catch(() => undefined);
+  };
+
+  const setPriority = (priority: NotePriority) => {
+    if (priority === note.priority) return;
+    void update({ priority }, `Priority set to ${PRIORITY_LABELS[priority]}`).catch(() => undefined);
   };
 
   const saveEdits = async (patch: NotePatch) => {
@@ -147,7 +178,6 @@ export function NoteCard({
       ref={rootRef}
       className={cx(
         'wm-note-card',
-        resolved && 'is-resolved',
         orphaned && 'is-orphaned',
         highlighted && 'is-highlighted',
         selected && 'is-selected',
@@ -155,6 +185,8 @@ export function NoteCard({
         className,
       )}
       data-note-id={note.id}
+      data-status={note.status}
+      data-priority={note.priority}
       aria-labelledby={headingId}
     >
       <div className="wm-note-card__head">
@@ -171,6 +203,7 @@ export function NoteCard({
           <PinBadge
             number={pinNumber}
             status={note.status}
+            priority={note.priority}
             orphaned={orphaned}
             onClick={onLocate}
             label={onLocate ? `${locateLabel} (${pinText})` : undefined}
@@ -186,8 +219,13 @@ export function NoteCard({
               <span className="wm-note-card__site">{siteOf(note.pageKey)}</span>
             </p>
           ) : null}
+          {editing ? null : (
+            <div className="wm-note-card__props">
+              <StatusMenu status={note.status} onChange={setStatus} />
+              <PriorityMenu priority={note.priority} onChange={setPriority} />
+            </div>
+          )}
         </div>
-        <StatusBadge status={note.status} className="wm-note-card__status" />
       </div>
 
       {editing ? (
@@ -218,15 +256,16 @@ export function NoteCard({
               </time>
             </p>
             <div className="wm-note-card__actions">
+              <IconButton
+                size="sm"
+                label={next.label}
+                title={`${next.label}: mark as ${STATUS_LABELS[next.status]}`}
+                icon={next.icon}
+                onClick={() => setStatus(next.status)}
+              />
               {onLocate ? (
                 <IconButton size="sm" label={locateLabel} icon={<IconCrosshair />} onClick={onLocate} />
               ) : null}
-              <IconButton
-                size="sm"
-                label={resolved ? 'Reopen' : 'Mark as resolved'}
-                icon={resolved ? <IconRotateCcw /> : <IconCheck />}
-                onClick={toggleStatus}
-              />
               <IconButton size="sm" label="Copy as Markdown" icon={<IconCopy />} onClick={() => void copyMarkdown()} />
               <IconButton
                 ref={editButtonRef}

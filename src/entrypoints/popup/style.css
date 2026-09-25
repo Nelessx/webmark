@@ -93,8 +93,8 @@ body {
 .popup-stats {
   display: grid;
   flex: none;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
   margin: 0;
 }
 
@@ -102,13 +102,18 @@ body {
   display: flex;
   flex-direction: column-reverse;
   gap: 1px;
-  padding: 8px 10px;
+  min-width: 0;
+  padding: 7px 8px;
   border: 1px solid var(--wm-border);
   border-radius: var(--wm-radius-sm);
   background: var(--wm-surface);
 }
 
+/* The status dot sits by the number, so "In progress" fits its column. */
 .popup-stat__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   font-size: 18px;
   font-weight: 600;
@@ -116,35 +121,28 @@ body {
   line-height: 1.2;
 }
 
-.popup-stat__label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  color: var(--wm-text-muted);
+.popup-stat__value::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wm-status-color, var(--wm-border-strong));
 }
 
-.popup-stat__label::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+.popup-stat__label {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--wm-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.popup-stat[data-status='none'] .popup-stat__value::before {
   background: var(--wm-border-strong);
 }
 
-.popup-stat--open .popup-stat__label::before {
-  background: var(--wm-pin-open);
-}
-
-.popup-stat--resolved .popup-stat__label::before {
-  background: var(--wm-pin-resolved);
-}
-
-.popup-stat--missing .popup-stat__label::before {
-  background: var(--wm-warning);
-}
-
-.popup-stat--missing .popup-stat__value {
+.popup-stat[data-status='missing'] .popup-stat__value {
   color: var(--wm-warning);
 }
 
@@ -222,7 +220,7 @@ body {
   color: var(--wm-text-muted);
 }
 
-.popup-note.is-resolved .popup-note__label {
+.popup-note[data-status='completed'] .popup-note__label {
   color: var(--wm-text-muted);
   font-weight: 500;
 }

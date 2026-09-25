@@ -101,8 +101,27 @@
     box-shadow 120ms ease;
 }
 
-.wm-pin[data-status='resolved'] {
-  background: var(--wm-pin-resolved);
+/* Status colour (archived notes get no pin). White numbers stay above 4.5:1. */
+.wm-pin[data-status='in_progress'] {
+  background: var(--wm-pin-in-progress);
+}
+
+.wm-pin[data-status='completed'] {
+  background: var(--wm-pin-completed);
+}
+
+/* High priority: a red dot on the pin's top-right edge. */
+.wm-pin[data-priority='high']::after {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--wm-pin-high);
+  box-shadow: 0 0 0 2px #ffffff;
+  pointer-events: none;
 }
 
 .wm-pin:hover,
@@ -183,11 +202,15 @@
 
 .wm-tooltip__num {
   flex: none;
-  color: var(--wm-pin-open);
+  color: var(--wm-status-open);
 }
 
-.wm-tooltip__num[data-status='resolved'] {
-  color: var(--wm-pin-resolved);
+.wm-tooltip__num[data-status='in_progress'] {
+  color: var(--wm-status-in-progress);
+}
+
+.wm-tooltip__num[data-status='completed'] {
+  color: var(--wm-status-completed);
 }
 
 .wm-tooltip__label {
@@ -204,9 +227,81 @@
 }
 
 .wm-tooltip__meta {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--wm-text-muted);
   font-size: 11px;
+}
+
+/* Status (dot + label) and priority (bars + label), in the tooltip and the orphan card. */
+.wm-tooltip__props,
+.wm-card__props {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.wm-tooltip__props {
+  margin-top: 6px;
+}
+
+.wm-tooltip__status,
+.wm-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.wm-tooltip__status::before,
+.wm-card__status::before {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wm-status-open);
+}
+
+.wm-tooltip__status[data-status='in_progress']::before,
+.wm-card__status[data-status='in_progress']::before {
+  background: var(--wm-status-in-progress);
+}
+
+.wm-tooltip__status[data-status='completed']::before,
+.wm-card__status[data-status='completed']::before {
+  background: var(--wm-status-completed);
+}
+
+.wm-tooltip__status[data-status='archived']::before,
+.wm-card__status[data-status='archived']::before {
+  background: var(--wm-status-archived);
+}
+
+.wm-tooltip__priority,
+.wm-card__priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--wm-text-muted);
+}
+
+.wm-tooltip__priority .wm-priority-icon,
+.wm-card__priority .wm-priority-icon {
+  display: block;
+  flex: none;
+  color: var(--wm-priority-medium);
+}
+
+.wm-tooltip__priority[data-priority='high'] .wm-priority-icon,
+.wm-card__priority[data-priority='high'] .wm-priority-icon {
+  color: var(--wm-priority-high);
+}
+
+.wm-tooltip__priority[data-priority='low'] .wm-priority-icon,
+.wm-card__priority[data-priority='low'] .wm-priority-icon {
+  color: var(--wm-priority-low);
 }
 
 /* ---------------------------------------------------------------- Editor */
@@ -328,8 +423,12 @@
   font-weight: 700;
 }
 
-.wm-card__num[data-status='resolved'] {
-  background: var(--wm-pin-resolved);
+.wm-card__num[data-status='in_progress'] {
+  background: var(--wm-pin-in-progress);
+}
+
+.wm-card__num[data-status='completed'] {
+  background: var(--wm-pin-completed);
 }
 
 .wm-card__label {
@@ -376,8 +475,7 @@
 }
 
 .wm-card__status {
-  color: var(--wm-text-muted);
-  font-size: 11.5px;
+  color: var(--wm-text);
 }
 
 /* ---------------------------------------------------------------- Toasts */

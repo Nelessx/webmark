@@ -1,24 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/Button';
-import { IconSettings } from '@/components/icons';
 import { EmptyState } from '@/components/EmptyState';
 import {
   collectTags,
   countByStatus,
-  noteHasTags,
-  noteMatchesQuery,
-  noteMatchesStatus,
+  filterNotes,
+  filtersActive,
+  isNoteSort,
+  NOTE_SORTS,
+  SORT_LABELS,
+  sortNotes,
+  type NoteFilters,
+  type NoteSort,
+  type PriorityFilter,
   type StatusFilter,
 } from '@/components/filter';
+import { priorityFilterOptions, statusFilterOptions } from '@/components/filterOptions';
 import { useAllNotes } from '@/components/hooks';
-import { Segmented } from '@/components/Segmented';
-import { TagList } from '@/components/TagList';
+import { IconSettings } from '@/components/icons';
 import { Logo } from '@/components/Logo';
 import { NoteCard } from '@/components/NoteCard';
+import { PriorityIcon } from '@/components/PriorityIcon';
+import { Segmented } from '@/components/Segmented';
+import { StatusDot } from '@/components/StatusBadge';
+import { TagList } from '@/components/TagList';
 import { Toaster } from '@/components/Toaster';
 import { showToast } from '@/components/toast';
 import { revealNote } from '@/lib/compat';
 import { DEFAULT_SHORTCUTS, pinNumber } from '@/lib/constants';
+import { isArchivedStatus, NOTE_STATUSES, STATUS_LABELS } from '@/lib/noteMeta';
 import { deleteNote, updateNote } from '@/lib/storage';
 import type { Note } from '@/lib/types';
 import { displayPageKey } from '@/lib/url';
@@ -27,8 +37,9 @@ import { DataActions } from './DataActions';
 import { SettingsPanel } from './SettingsPanel';
 
 /*
- * "All notes" page: every note grouped by page, with search, status and tag
- * filters, bulk actions, export/import and settings.
+ * "All notes" page: every note grouped by page, with search, status,
+ * priority and tag filters, sorting, bulk actions, export/import and
+ * settings. Archived notes are left out unless the Archived filter is on.
  */
 
 interface PageGroup {
@@ -51,6 +62,8 @@ function groupByPage(notes: Note[]): PageGroup[] {
     (a, b) => Math.max(...b.notes.map((n) => n.updatedAt)) - Math.max(...a.notes.map((n) => n.updatedAt)),
   );
 }
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 /** '#welcome' after install, '#note=<id>' from pins/badges, '#settings'. */
 function readHash() {
@@ -80,6 +93,8 @@ export function App() {
   const { notes, loading } = useAllNotes();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
+  const [priority, setPriority] = useState<PriorityFilter>('all');
+  const [sort, setSort] = useState<NoteSort>('pin');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   const tagCounts = useMemo(() => collectTags(notes), [notes]);
@@ -91,33 +106,38 @@ export function App() {
   const toggleTag = (tag: string) =>
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
 
-  // Status counts reflect the search and tag filters, like the side panel.
-  const searched = useMemo(
-    () => notes.filter((n) => noteMatchesQuery(n, query) && noteHasTags(n, activeTags)),
-    [notes, query, activeTags],
+  // Each filter's counts reflect the other filters, like the side panel.
+  const filters = useMemo<NoteFilters>(
+    () => ({ query, tags: activeTags, status, priority }),
+    [query, activeTags, status, priority],
   );
-  const counts = countByStatus(searched);
+  const { visible, statusCounts, priorityCounts } = useMemo(() => filterNotes(notes, filters), [notes, filters]);
+  const narrowed = filtersActive(filters);
 
   // Pin numbers come from the full page list, not the filtered one.
   const allGroups = useMemo(() => groupByPage(notes), [notes]);
   const visibleGroups = useMemo(() => {
-    const shown = new Set(searched.filter((n) => noteMatchesStatus(n, status)).map((n) => n.id));
+    const shown = new Set(visible.map((n) => n.id));
     return allGroups
-      .map((group) => ({ ...group, visible: group.notes.filter((n) => shown.has(n.id)) }))
+      .map((group) => ({ ...group, visible: sortNotes(group.notes.filter((n) => shown.has(n.id)), sort) }))
       .filter((group) => group.visible.length > 0);
-  }, [allGroups, searched, status]);
+  }, [allGroups, visible, sort]);
 
-  const openCount = notes.filter((n) => n.status === 'open').length;
-  const filtersActive = query.trim() !== '' || status !== 'all' || activeTags.length > 0;
-  const filteredNotes = filtersActive ? visibleGroups.flatMap((g) => g.visible) : null;
+  // Summary over every note: per status, and high priority among those not archived.
+  const totals = useMemo(() => countByStatus(notes), [notes]);
+  const highCount = useMemo(
+    () => notes.filter((n) => n.priority === 'high' && !isArchivedStatus(n.status)).length,
+    [notes],
+  );
 
   const clearFilters = () => {
     setQuery('');
     setStatus('all');
+    setPriority('all');
     setSelectedTags([]);
   };
 
-  // Bulk selection only ever covers notes that are currently shown.
+  // Bulk selection and reports only ever cover notes that are currently shown.
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const shownNotes = useMemo(() => visibleGroups.flatMap((g) => g.visible), [visibleGroups]);
   const selectedNotes = useMemo(() => shownNotes.filter((n) => selectedIds.has(n.id)), [shownNotes, selectedIds]);
@@ -129,7 +149,17 @@ export function App() {
       return next;
     });
 
-  // Scroll a deep-linked note into view once it has rendered.
+  // A deep-linked archived note is only listed under Archived: switch there once.
+  const revealedArchived = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!route.noteId || loading || revealedArchived.current === route.noteId) return;
+    const target = notes.find((n) => n.id === route.noteId);
+    if (!target) return;
+    revealedArchived.current = route.noteId;
+    if (isArchivedStatus(target.status)) setStatus('archived');
+  }, [route.noteId, loading, notes]);
+
+  // Scroll a deep-linked note into view once it has rendered (a card mounted later scrolls itself).
   useEffect(() => {
     if (!route.noteId || loading) return;
     document.getElementById(`note-${route.noteId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -143,7 +173,7 @@ export function App() {
           <div>
             <h1>WebMark</h1>
             <p>
-              {notes.length} notes · {openCount} open · {allGroups.length} pages
+              {plural(notes.length, 'note')} on {plural(allGroups.length, 'page')}
             </p>
           </div>
         </div>
@@ -157,8 +187,25 @@ export function App() {
         />
       </header>
 
+      {notes.length ? (
+        <ul className="wm-allnotes__stats" aria-label="Summary">
+          {NOTE_STATUSES.map((s) => (
+            <li key={s} className="wm-allnotes__stat" data-status={s}>
+              <StatusDot status={s} />
+              <strong>{totals[s]}</strong> {STATUS_LABELS[s].toLowerCase()}
+            </li>
+          ))}
+          <li className="wm-allnotes__stat" data-priority="high" title="High-priority notes that aren't archived">
+            <span className="wm-priority-mark" data-priority="high">
+              <PriorityIcon priority="high" />
+            </span>
+            <strong>{highCount}</strong> high priority
+          </li>
+        </ul>
+      ) : null}
+
       <div className="wm-allnotes__toolbar">
-        <DataActions notes={notes} filtered={filteredNotes} />
+        <DataActions notes={notes} shown={shownNotes} />
         <Button
           size="sm"
           variant={showSettings ? 'secondary' : 'ghost'}
@@ -177,12 +224,29 @@ export function App() {
             label="Filter by status"
             value={status}
             onChange={setStatus}
-            options={[
-              { value: 'all', label: 'All', count: counts.all },
-              { value: 'open', label: 'Open', count: counts.open },
-              { value: 'resolved', label: 'Resolved', count: counts.resolved },
-            ]}
+            options={statusFilterOptions(statusCounts)}
           />
+          <Segmented
+            label="Filter by priority"
+            value={priority}
+            onChange={setPriority}
+            options={priorityFilterOptions(priorityCounts)}
+          />
+          <label className="wm-allnotes__sort">
+            <span>Sort</span>
+            <select
+              className="wm-allnotes__select"
+              aria-label="Sort notes on each page"
+              value={sort}
+              onChange={(e) => isNoteSort(e.target.value) && setSort(e.target.value)}
+            >
+              {NOTE_SORTS.map((value) => (
+                <option key={value} value={value}>
+                  {SORT_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          </label>
           {tagCounts.length ? (
             <TagList
               label="Filter by tag"
@@ -192,7 +256,7 @@ export function App() {
               activeTags={activeTags}
             />
           ) : null}
-          {filtersActive ? (
+          {narrowed ? (
             <Button size="sm" variant="ghost" onClick={clearFilters}>
               Clear filters
             </Button>
@@ -239,8 +303,14 @@ export function App() {
             title="No notes yet"
             description={`Open any website, press ${DEFAULT_SHORTCUTS.startPicker} (or right-click → "Add WebMark note to this element"), pick an element and write your note.`}
           />
+        ) : visibleGroups.length === 0 && !narrowed && statusCounts.archived > 0 ? (
+          <EmptyState title="Every note is archived" description="Archived notes stay out of the list until you ask for them.">
+            <Button size="sm" onClick={() => setStatus('archived')}>
+              Show archived
+            </Button>
+          </EmptyState>
         ) : visibleGroups.length === 0 ? (
-          <EmptyState title="No matching notes" description="Try a different search, status or tag.">
+          <EmptyState title="No matching notes" description="Try a different search, status, priority or tag.">
             <Button size="sm" onClick={clearFilters}>
               Clear filters
             </Button>

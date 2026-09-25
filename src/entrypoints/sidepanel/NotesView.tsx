@@ -3,12 +3,13 @@ import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import {
   collectTags,
-  countByStatus,
-  noteHasTags,
-  noteMatchesQuery,
-  noteMatchesStatus,
+  filterNotes,
+  filtersActive,
+  type NoteFilters,
+  type PriorityFilter,
   type StatusFilter,
 } from '@/components/filter';
+import { priorityFilterOptions, statusFilterOptions } from '@/components/filterOptions';
 import { useToast } from '@/components/hooks';
 import { IconSearch } from '@/components/icons';
 import { NoteCard } from '@/components/NoteCard';
@@ -28,11 +29,16 @@ interface NotesViewProps {
   page: CurrentPage;
 }
 
-/** Search, status and tag filters over the page's notes, with found / not-found groups. */
+/**
+ * Search, status, priority and tag filters over the page's notes, with found
+ * / not-found groups. "All" leaves archived notes out; they are listed under
+ * "Archived" only.
+ */
 export function NotesView({ page }: NotesViewProps) {
   const toast = useToast();
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
+  const [priority, setPriority] = useState<PriorityFilter>('all');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   useSlashFocuses(searchRef);
@@ -43,14 +49,15 @@ export function NotesView({ page }: NotesViewProps) {
     () => selectedTags.filter((tag) => tagCounts.some((t) => t.tag === tag)),
     [selectedTags, tagCounts],
   );
-  const searched = useMemo(
-    () => page.notes.filter((n) => noteMatchesQuery(n, query) && noteHasTags(n, activeTags)),
-    [page.notes, query, activeTags],
+  const filters = useMemo<NoteFilters>(
+    () => ({ query, tags: activeTags, status, priority }),
+    [query, activeTags, status, priority],
   );
-  const counts = countByStatus(searched);
-  const visible = searched.filter((n) => noteMatchesStatus(n, status));
+  const { visible, statusCounts, priorityCounts } = useMemo(() => filterNotes(page.notes, filters), [page.notes, filters]);
+  // Archived notes are never in orphanedIds: they have no pin to miss.
   const found = visible.filter((n) => !page.orphanedIds.has(n.id));
   const orphaned = visible.filter((n) => page.orphanedIds.has(n.id));
+  const narrowed = filtersActive(filters);
 
   const toggleTag = (tag: string) =>
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -58,6 +65,7 @@ export function NotesView({ page }: NotesViewProps) {
   const clearFilters = () => {
     setQuery('');
     setStatus('all');
+    setPriority('all');
     setSelectedTags([]);
   };
 
@@ -82,20 +90,46 @@ export function NotesView({ page }: NotesViewProps) {
     />
   );
 
+  let empty = null;
+  if (!visible.length) {
+    empty =
+      !narrowed && statusCounts.archived > 0 ? (
+        <EmptyState
+          compact
+          icon={<IconSearch size={20} />}
+          title="All notes on this page are archived"
+          description="Archived notes stay out of the list and have no pins."
+        >
+          <Button size="sm" onClick={() => setStatus('archived')}>
+            Show archived
+          </Button>
+        </EmptyState>
+      ) : (
+        <EmptyState compact icon={<IconSearch size={20} />} title="No notes match" description="Try another search or filter.">
+          <Button size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        </EmptyState>
+      );
+  }
+
   return (
     <>
       <div className="sp-toolbar">
         <SearchInput ref={searchRef} value={query} onChange={setQuery} placeholder="Search notes" hint="/" />
         <Segmented
           label="Filter by status"
-          block
+          variant="chips"
           value={status}
           onChange={setStatus}
-          options={[
-            { value: 'all', label: 'All', count: counts.all },
-            { value: 'open', label: 'Open', count: counts.open },
-            { value: 'resolved', label: 'Resolved', count: counts.resolved },
-          ]}
+          options={statusFilterOptions(statusCounts)}
+        />
+        <Segmented
+          label="Filter by priority"
+          variant="chips"
+          value={priority}
+          onChange={setPriority}
+          options={priorityFilterOptions(priorityCounts)}
         />
         {tagCounts.length ? (
           <TagList
@@ -105,6 +139,11 @@ export function NotesView({ page }: NotesViewProps) {
             onTagClick={toggleTag}
             activeTags={activeTags}
           />
+        ) : null}
+        {narrowed ? (
+          <button type="button" className="wm-link-btn sp-toolbar__clear" onClick={clearFilters}>
+            Clear filters
+          </button>
         ) : null}
       </div>
 
@@ -121,19 +160,13 @@ export function NotesView({ page }: NotesViewProps) {
             </div>
             <p className="sp-orphans__hint">
               The page changed and these elements couldn't be matched. The notes are kept so you can review, edit or
-              resolve them.
+              complete them.
             </p>
             {orphaned.map(renderCard)}
           </section>
         ) : null}
 
-        {!visible.length ? (
-          <EmptyState compact icon={<IconSearch size={20} />} title="No notes match" description="Try another search or filter.">
-            <Button size="sm" onClick={clearFilters}>
-              Clear filters
-            </Button>
-          </EmptyState>
-        ) : null}
+        {empty}
       </main>
     </>
   );

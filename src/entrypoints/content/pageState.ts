@@ -1,5 +1,7 @@
 import type { ContentScriptContext } from 'wxt/utils/content-script-context';
 import { sendToBackground, type PageState } from '@/lib/messages';
+import { isActiveStatus, isArchivedStatus, isNoteStatus, NOTE_STATUSES } from '@/lib/noteMeta';
+import type { NoteStatus } from '@/lib/types';
 import type { AppState, AppStore } from './store';
 
 const REPORT_DELAY_MS = 150;
@@ -7,12 +9,15 @@ const REPORT_DELAY_MS = 150;
 export function computePageState(state: AppState): PageState {
   const resolvedIds: string[] = [];
   const orphanedIds: string[] = [];
-  let openCount = 0;
+  const statusCounts = Object.fromEntries(NOTE_STATUSES.map((status) => [status, 0])) as Record<NoteStatus, number>;
+  let activeCount = 0;
   for (const note of state.notes) {
-    if (note.status === 'open') openCount++;
+    if (isNoteStatus(note.status)) statusCounts[note.status]++;
+    if (isActiveStatus(note.status)) activeCount++;
     if (state.resolved.has(note.id)) resolvedIds.push(note.id);
-    // Before the first resolution pass a note is neither found nor missing yet.
-    else if (state.resolvedOnce) orphanedIds.push(note.id);
+    // Before the first resolution pass a note is neither found nor missing
+    // yet. Archived notes have no pin, so theirs is never missing.
+    else if (state.resolvedOnce && !isArchivedStatus(note.status)) orphanedIds.push(note.id);
   }
   return {
     pageKey: state.pageKey,
@@ -22,7 +27,8 @@ export function computePageState(state: AppState): PageState {
     pickerActive: state.pickerActive,
     resolvedIds,
     orphanedIds,
-    openCount,
+    activeCount,
+    statusCounts,
   };
 }
 

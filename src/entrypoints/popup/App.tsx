@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { browser } from 'wxt/browser';
 import { Button } from '@/components/Button';
 import { useCommandShortcut, useSettings, useToast } from '@/components/hooks';
@@ -13,6 +13,7 @@ import { useCurrentPage, type CurrentPage } from '@/components/useCurrentPage';
 import { openDashboard, openSidePanel } from '@/lib/compat';
 import { DEFAULT_SHORTCUTS } from '@/lib/constants';
 import { sendToTab } from '@/lib/messages';
+import { isArchivedStatus } from '@/lib/noteMeta';
 import { PageNoteList } from './PageNoteList';
 import { PageStats } from './PageStats';
 
@@ -116,6 +117,8 @@ function ReadyView({ page, unreachable }: ReadyViewProps) {
   const pickerShortcut = useCommandShortcut('start-picker', DEFAULT_SHORTCUTS.startPicker);
   const pinsShortcut = useCommandShortcut('toggle-pins', DEFAULT_SHORTCUTS.togglePins);
   const [busy, setBusy] = useState(false);
+  // Archived notes are put away: not counted, not listed.
+  const listed = useMemo(() => page.notes.filter((n) => !isArchivedStatus(n.status)), [page.notes]);
 
   const startPicker = async () => {
     if (page.tabId === undefined || busy) return;
@@ -167,7 +170,7 @@ function ReadyView({ page, unreachable }: ReadyViewProps) {
         </div>
       </section>
 
-      {page.notes.length ? <PageStats notes={page.notes} orphanedIds={page.orphanedIds} /> : null}
+      {listed.length ? <PageStats notes={listed} orphanedIds={page.orphanedIds} /> : null}
 
       <PageNoteList notes={page.notes} orphanedIds={page.orphanedIds} onSelect={(id) => void focusNote(id)} />
     </>

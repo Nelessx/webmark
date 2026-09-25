@@ -1,10 +1,12 @@
 import { useEffect, useMemo } from 'react';
+import { PriorityIcon } from '@/components/PriorityIcon';
 import { pinNumber } from '@/lib/constants';
 import { formatRelativeTime } from '@/lib/format';
+import { PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
 import type { Note } from '@/lib/types';
 import { pinRowPositions, placeTooltip, type Point } from '../geometry';
 import type { LayoutSnapshot } from '../layout';
-import { outsideModal } from '../store';
+import { hasPin, outsideModal } from '../store';
 import { useAppState, useLayout, useWebmark } from './context';
 
 const TOOLTIP_WIDTH = 260;
@@ -26,14 +28,20 @@ function preview(body: string): string {
   return flat.length > PREVIEW_CHARS ? `${flat.slice(0, PREVIEW_CHARS - 1)}…` : flat;
 }
 
-/** Group resolved notes by element, in pin-number order. */
+/** "WebMark note 3, In progress, high priority: Revenue card". */
+function pinLabel(number: number, note: Note): string {
+  const priority = note.priority === 'high' ? ', high priority' : '';
+  return `WebMark note ${number}, ${STATUS_LABELS[note.status]}${priority}: ${note.label}`;
+}
+
+/** Group the found notes that get a pin (not archived ones) by element, in pin-number order. */
 function useGroups(): PinGroup[] {
   const notes = useAppState((s) => s.notes);
   const resolved = useAppState((s) => s.resolved);
   return useMemo(() => {
     const groups = new Map<Element, Note[]>();
     for (const note of notes) {
-      const el = resolved.get(note.id);
+      const el = hasPin(note) ? resolved.get(note.id) : undefined;
       if (!el) continue;
       const list = groups.get(el);
       if (list) list.push(note);
@@ -43,7 +51,11 @@ function useGroups(): PinGroup[] {
   }, [notes, resolved]);
 }
 
-/** Pins for every visible annotated element; several notes on one element sit in a row. */
+/**
+ * Pins for every visible annotated element; several notes on one element sit
+ * in a row. Numbers count every note of the page, archived ones included, so
+ * "#3" is the same note everywhere.
+ */
 function placePins(groups: PinGroup[], notes: Note[], layout: LayoutSnapshot, modal: Element | null): PlacedPin[] {
   const placed: PlacedPin[] = [];
   for (const group of groups) {
@@ -89,7 +101,8 @@ export function Pins() {
           className="wm-pin"
           data-wm-pin={note.id}
           data-status={note.status}
-          aria-label={`WebMark note ${number}: ${note.label}`}
+          data-priority={note.priority}
+          aria-label={pinLabel(number, note)}
           style={{ translate: `${position.left}px ${position.top}px` }}
           onClick={() => actions.openNote(note.id)}
           onMouseEnter={() => actions.setHover(note.id)}
@@ -122,8 +135,16 @@ function PinTooltip({ pin, layout }: { pin: PlacedPin; layout: LayoutSnapshot })
         <span className="wm-tooltip__label">{note.label}</span>
       </div>
       {note.body && <div className="wm-tooltip__body">{preview(note.body)}</div>}
+      <div className="wm-tooltip__props">
+        <span className="wm-tooltip__status" data-status={note.status}>
+          {STATUS_LABELS[note.status]}
+        </span>
+        <span className="wm-tooltip__priority" data-priority={note.priority}>
+          <PriorityIcon priority={note.priority} />
+          {PRIORITY_LABELS[note.priority]} priority
+        </span>
+      </div>
       <div className="wm-tooltip__meta">
-        {note.status === 'resolved' ? 'Resolved · ' : ''}
         {note.author ? `${note.author} · ` : ''}
         {formatRelativeTime(note.updatedAt)}
       </div>

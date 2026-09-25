@@ -1,5 +1,6 @@
 import { pinNumber } from './constants';
-import type { Note } from './types';
+import { NOTE_PRIORITIES, NOTE_STATUSES, PRIORITY_LABELS, STATUS_LABELS } from './noteMeta';
+import type { Note, NotePriority, NoteStatus } from './types';
 import { displayPageKey, redactUrl, sanitizePageKey, siteOf } from './url';
 
 // ---------------------------------------------------------------------------
@@ -150,7 +151,16 @@ function firstLine(body: string): string {
 }
 
 function statusLabel(note: Note): string {
-  return note.status === 'resolved' ? 'Resolved' : 'Open';
+  return STATUS_LABELS[note.status];
+}
+
+function priorityLabel(note: Note): string {
+  return PRIORITY_LABELS[note.priority];
+}
+
+/** Work that is finished or put away is ticked in a report's checklist. */
+function isDone(note: Note): boolean {
+  return note.status === 'completed' || note.status === 'archived';
 }
 
 function tagList(tags: string[]): string {
@@ -173,6 +183,7 @@ export function noteToMarkdown(note: Note, options?: { includeTechnical?: boolea
 
   lines.push(`- **Page:** ${pageLink(note.pageTitle, note.url, note.pageKey)}`);
   lines.push(`- **Status:** ${statusLabel(note)}`);
+  lines.push(`- **Priority:** ${priorityLabel(note)}`);
   const tags = tagList(note.tags);
   if (tags) lines.push(`- **Tags:** ${tags}`);
   const author = escapeInline(note.author);
@@ -196,11 +207,29 @@ export function noteToMarkdown(note: Note, options?: { includeTechnical?: boolea
 
 interface PageGroup {
   pageKey: string;
-  /** Oldest first, so pin numbers match the page. */
+  /** Oldest first. */
   notes: Note[];
+  /** Pin number of each note, counted over all of the page's notes (see notesToMarkdownReport). */
+  pins: Map<string, number>;
 }
 
-function groupBySiteAndPage(notes: Note[]): Map<string, PageGroup[]> {
+/**
+ * Pin numbers as the page shows them: counted over every note of each page,
+ * including ones a report leaves out (archived notes still hold their number).
+ */
+function pinNumbersByPage(allNotes: Note[]): Map<string, number> {
+  const byPage = new Map<string, Note[]>();
+  for (const note of allNotes) byPage.set(note.pageKey, [...(byPage.get(note.pageKey) ?? []), note]);
+  const pins = new Map<string, number>();
+  for (const pageNotes of byPage.values()) {
+    const ordered = [...pageNotes].sort((a, b) => a.createdAt - b.createdAt);
+    for (const note of ordered) pins.set(note.id, pinNumber(note.id, ordered));
+  }
+  return pins;
+}
+
+function groupBySiteAndPage(notes: Note[], allNotes: Note[]): Map<string, PageGroup[]> {
+  const pins = pinNumbersByPage(allNotes);
   const pages = new Map<string, Note[]>();
   for (const note of notes) {
     const list = pages.get(note.pageKey) ?? [];
@@ -215,6 +244,7 @@ function groupBySiteAndPage(notes: Note[]): Map<string, PageGroup[]> {
     const group: PageGroup = {
       pageKey,
       notes: [...(pages.get(pageKey) ?? [])].sort((a, b) => a.createdAt - b.createdAt),
+      pins,
     };
     sites.set(site, [...(sites.get(site) ?? []), group]);
   }
@@ -234,14 +264,16 @@ function reportPageLines(group: PageGroup): string[] {
   const target = safeLinkTarget(url);
 
   const lines = [`### ${heading}`, '', target ? `<${target}>` : codeSpan(url), ''];
-  for (const note of group.notes) lines.push(...reportNoteLines(note, pinNumber(note.id, group.notes)), '');
+  for (const note of group.notes) {
+    lines.push(...reportNoteLines(note, group.pins.get(note.id) ?? pinNumber(note.id, group.notes)), '');
+  }
   return lines;
 }
 
 function reportNoteLines(note: Note, pin: number): string[] {
-  const box = note.status === 'resolved' ? '[x]' : '[ ]';
+  const box = isDone(note) ? '[x]' : '[ ]';
   const label = escapeInline(note.label) || 'Element';
-  const lines = [`- ${box} **#${pin} · ${label}**`];
+  const lines = [`- ${box} **#${pin} · ${label}** · ${statusLabel(note)} · ${priorityLabel(note)} priority`];
 
   const indent = (line: string) => (line ? `  ${line}` : '');
   const body = markdownBodyLines(note.body);
@@ -258,23 +290,44 @@ function plural(count: number, word: string): string {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
-/** A full Markdown report of many notes, grouped by site and page. */
-export function notesToMarkdownReport(notes: Note[], options?: { title?: string }): string {
+function countBy<K extends string>(notes: Note[], keys: readonly K[], key: (note: Note) => K): Map<K, number> {
+  const counts = new Map<K, number>(keys.map((k) => [k, 0]));
+  for (const note of notes) counts.set(key(note), (counts.get(key(note)) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * "4 open · 2 in progress · 5 completed" and "3 high · 6 medium · 2 low priority":
+ * every status/priority in workflow order, leaving out ones no note has.
+ */
+function summaryLines(notes: Note[]): string[] {
+  const byStatus = countBy<NoteStatus>(notes, NOTE_STATUSES, (n) => n.status);
+  const byPriority = countBy<NotePriority>(notes, NOTE_PRIORITIES, (n) => n.priority);
+  const statuses = NOTE_STATUSES.filter((s) => byStatus.get(s))
+    .map((s) => `${byStatus.get(s)} ${STATUS_LABELS[s].toLowerCase()}`)
+    .join(' · ');
+  const priorities = NOTE_PRIORITIES.filter((p) => byPriority.get(p))
+    .map((p) => `${byPriority.get(p)} ${PRIORITY_LABELS[p].toLowerCase()}`)
+    .join(' · ');
+  const lines = [`**${plural(notes.length, 'note')}**${statuses ? ` · ${statuses}` : ''}`];
+  if (priorities) lines.push('', `Priority: ${priorities}`);
+  return lines;
+}
+
+/**
+ * A full Markdown report of many notes, grouped by site and page.
+ * `allNotes`: every note of the pages involved, including ones left out of the
+ * report (e.g. archived), so "#3" is the same note as pin 3 on the page.
+ * Defaults to `notes`.
+ */
+export function notesToMarkdownReport(notes: Note[], options?: { title?: string; allNotes?: Note[] }): string {
   const title = escapeInline(options?.title ?? '') || 'WebMark feedback report';
-  const resolved = notes.filter((n) => n.status === 'resolved').length;
-  const lines = [
-    `# ${title}`,
-    '',
-    `Generated ${formatUtcDateTime(Date.now())}`,
-    '',
-    `**${plural(notes.length, 'note')}** · ${notes.length - resolved} open · ${resolved} resolved`,
-    '',
-  ];
+  const lines = [`# ${title}`, '', `Generated ${formatUtcDateTime(Date.now())}`, '', ...summaryLines(notes), ''];
 
   if (!notes.length) {
     lines.push('_No notes._', '');
   }
-  for (const [site, groups] of groupBySiteAndPage(notes)) {
+  for (const [site, groups] of groupBySiteAndPage(notes, options?.allNotes ?? notes)) {
     lines.push(`## ${escapeInline(site)}`, '');
     for (const group of groups) lines.push(...reportPageLines(group));
   }
@@ -293,6 +346,7 @@ const CSV_COLUMNS = [
   'label',
   'body',
   'status',
+  'priority',
   'tags',
   'author',
   'created_at',
@@ -317,7 +371,9 @@ function csvRow(note: Note): string[] {
     redactUrl(note.url),
     note.label,
     note.body,
-    note.status,
+    // Labels, not codes: CSV exports are read in spreadsheets.
+    statusLabel(note),
+    priorityLabel(note),
     note.tags.join('; '),
     note.author,
     toIso(note.createdAt),

@@ -86,6 +86,10 @@ body {
   scrollbar-width: thin;
 }
 
+.sp-toolbar__clear {
+  align-self: flex-start;
+}
+
 /* Scrolling note list */
 
 .sp-list {

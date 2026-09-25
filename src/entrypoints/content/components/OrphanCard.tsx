@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { PriorityIcon } from '@/components/PriorityIcon';
 import { pinNumber } from '@/lib/constants';
+import { PRIORITY_LABELS, STATUS_LABELS } from '@/lib/noteMeta';
 import type { Note } from '@/lib/types';
 import { safeImageSrc } from '../dom';
 import { useAppState, useWebmark } from './context';
@@ -54,7 +56,15 @@ export function OrphanCard({ note }: { note: Note }) {
       {note.body && <div className="wm-card__body">{note.body}</div>}
       {screenshot && <img className="wm-card__shot" src={screenshot} alt="Screenshot of the element when the note was written" />}
       <div className="wm-card__foot">
-        <span className="wm-card__status">{note.status === 'resolved' ? 'Resolved' : 'Open'}</span>
+        <span className="wm-card__props">
+          <span className="wm-card__status" data-status={note.status}>
+            {STATUS_LABELS[note.status]}
+          </span>
+          <span className="wm-card__priority" data-priority={note.priority}>
+            <PriorityIcon priority={note.priority} />
+            {PRIORITY_LABELS[note.priority]} priority
+          </span>
+        </span>
         <button type="button" className="wm-btn wm-btn--ghost" onClick={() => actions.openDashboard(note.id)}>
           Open in dashboard
         </button>

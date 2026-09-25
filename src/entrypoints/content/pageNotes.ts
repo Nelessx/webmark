@@ -3,7 +3,7 @@ import { getNotesForPage, type NotesChange } from '@/lib/storage';
 import type { Note } from '@/lib/types';
 import type { Timers } from './dom';
 import type { NoteResolver } from './resolver';
-import type { AppStore } from './store';
+import { hasPin, type AppStore } from './store';
 
 /** Loads the current page's notes and keeps them in step with storage. */
 export class PageNotes {
@@ -39,12 +39,16 @@ export class PageNotes {
     const change = changes.find((c) => c.pageKey === this.store.get().pageKey);
     if (!change) return false;
     this.version++;
-    const stillExists = (id: string | null) => (id && change.notes.some((n) => n.id === id) ? id : null);
+    // The "not found" card and a pin's hover go when their note is deleted, or archived (no pin, no card).
+    const stillShown = (id: string | null) => {
+      const note = id ? change.notes.find((n) => n.id === id) : undefined;
+      return note && hasPin(note) ? note.id : null;
+    };
     this.store.set((s) => ({
       notes: change.notes,
       notesLoaded: true,
-      orphanNoteId: stillExists(s.orphanNoteId),
-      hoverNoteId: stillExists(s.hoverNoteId),
+      orphanNoteId: stillShown(s.orphanNoteId),
+      hoverNoteId: stillShown(s.hoverNoteId),
     }));
     this.resolver.sync();
     return true;

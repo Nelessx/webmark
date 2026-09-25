@@ -174,9 +174,46 @@ body {
 .wm-allnotes__filters {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px 12px;
   flex-wrap: wrap;
   margin-bottom: 20px;
+}
+
+.wm-allnotes__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--wm-text-muted);
+}
+
+.wm-allnotes__sort .wm-allnotes__select {
+  padding-block: 4px;
+  font-size: 12.5px;
+}
+
+/* Summary: notes per status, and high priority ones. */
+.wm-allnotes__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: -8px 0 20px;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--wm-text-muted);
+}
+
+.wm-allnotes__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wm-allnotes__stat strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--wm-text);
 }
 
 .wm-allnotes__bulk {

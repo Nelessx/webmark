@@ -21,15 +21,20 @@
   box-sizing: border-box;
 }
 
-.wm-container button,
-.wm-container input,
-.wm-container textarea {
+/*
+ * Zero specificity (:where), so any component rule wins: the white bold
+ * numbers of the pins, the primary button's white label, the muted
+ * unselected choices.
+ */
+:where(.wm-container) button,
+:where(.wm-container) input,
+:where(.wm-container) textarea {
   font: inherit;
   color: inherit;
   margin: 0;
 }
 
-.wm-container button {
+:where(.wm-container) button {
   cursor: pointer;
 }
 
@@ -145,9 +150,29 @@
   font-size: 11.5px;
 }
 
+/* Status (existing notes) and priority: a label over a full-width segmented choice. */
+
+.wm-editor__props {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wm-editor__prop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wm-editor__prop-label {
+  color: var(--wm-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
 .wm-segmented {
-  display: inline-flex;
-  align-self: flex-start;
+  display: flex;
   gap: 2px;
   padding: 2px;
   background: var(--wm-surface-2);
@@ -156,13 +181,24 @@
 }
 
 .wm-segmented__option {
-  padding: 4px 12px;
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 6px;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: var(--wm-text-muted);
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
+}
+
+.wm-segmented__option:hover {
+  color: var(--wm-text);
 }
 
 .wm-segmented__option[aria-checked='true'] {
@@ -171,13 +207,58 @@
   box-shadow: 0 1px 2px rgba(20, 20, 40, 0.12);
 }
 
-.wm-segmented__option[data-wm-status-option='resolved'][aria-checked='true'] {
-  color: var(--wm-success);
-}
-
 .wm-segmented__option:focus-visible {
   outline: 2px solid var(--wm-accent);
   outline-offset: 1px;
+}
+
+/* The chosen status shows its colour dot. */
+.wm-editor__dot {
+  display: none;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--wm-status-open);
+}
+
+.wm-segmented__option[aria-checked='true'] .wm-editor__dot {
+  display: inline-block;
+}
+
+.wm-editor__dot[data-status='in_progress'] {
+  background: var(--wm-status-in-progress);
+}
+
+.wm-editor__dot[data-status='completed'] {
+  background: var(--wm-status-completed);
+}
+
+.wm-editor__dot[data-status='archived'] {
+  background: var(--wm-status-archived);
+}
+
+/* Priority bars: grey until chosen, then in the priority's colour. */
+.wm-segmented__option .wm-priority-icon {
+  display: block;
+  flex: none;
+  opacity: 0.7;
+}
+
+.wm-segmented__option[aria-checked='true'] .wm-priority-icon {
+  opacity: 1;
+}
+
+.wm-segmented__option[data-wm-priority-option='high'][aria-checked='true'] .wm-priority-icon {
+  color: var(--wm-priority-high);
+}
+
+.wm-segmented__option[data-wm-priority-option='medium'][aria-checked='true'] .wm-priority-icon {
+  color: var(--wm-priority-medium);
+}
+
+.wm-segmented__option[data-wm-priority-option='low'][aria-checked='true'] .wm-priority-icon {
+  color: var(--wm-priority-low);
 }
 
 .wm-editor__footer {
