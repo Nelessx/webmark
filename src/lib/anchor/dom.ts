@@ -46,6 +46,28 @@ export function composedParent(el: Element): Element | null {
   return null;
 }
 
+/** How many elements `selector` matches in `root` (0 for an invalid selector). */
+export function countMatches(root: QueryRoot, selector: string): number {
+  try {
+    return root.querySelectorAll(selector).length;
+  } catch {
+    return 0;
+  }
+}
+
+/** <html> and <body>: never an element's "item", and too big to watch. */
+export function isDocumentLevel(el: Element): boolean {
+  const tag = tagOf(el);
+  return tag === 'html' || tag === 'body';
+}
+
+/** The ancestor `depth` levels above `el` (1 = parent), or null. */
+export function ancestorAt(el: Element, depth: number): Element | null {
+  let current: Element | null = el;
+  for (let i = 0; i < depth && current; i++) current = current.parentElement;
+  return current;
+}
+
 /** CSS.escape with a spec-compliant fallback (jsdom has no CSS.escape). */
 export function cssEscape(value: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value);

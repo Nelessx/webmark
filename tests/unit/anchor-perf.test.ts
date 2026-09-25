@@ -104,4 +104,34 @@ describe('resolveAnchor performance on a 10k-element page', () => {
     },
     30_000,
   );
+
+  it(
+    'tells 1,000 identical "Edit" links apart by their rows within budget',
+    () => {
+      const table = (customers: number[]) => {
+        document.body.innerHTML = `<div id="app"><table><tbody>${customers
+          .map((n) => `<tr><td>Customer ${n}</td><td>customer${n}@example.com</td><td><a href="#" class="edit">Edit</a></td></tr>`)
+          .join('')}</tbody></table></div>`;
+      };
+      const editLink = (n: number) => {
+        const cell = Array.from(document.querySelectorAll('td')).find((td) => td.textContent === `Customer ${n}`);
+        return cell?.parentElement?.querySelector('a') ?? null;
+      };
+      const all = Array.from({ length: 1000 }, (_, i) => i + 1);
+      table(all);
+      const anchor: ElementAnchor = { ...createAnchor(editLink(500)!), selector: '', xpath: '' };
+      expect(anchor.lookAlikes).toBe(999);
+
+      table([...all].reverse());
+      const found = timed(() => resolveAnchor(anchor, document));
+      expect(found.value?.element).toBe(editLink(500));
+      expect(found.ms).toBeLessThan(300);
+
+      table(all.filter((n) => n !== 500));
+      const gone = timed(() => resolveAnchor(anchor, document));
+      expect(gone.value).toBeNull();
+      expect(gone.ms).toBeLessThan(300);
+    },
+    30_000,
+  );
 });

@@ -18,7 +18,9 @@ const picker = vi.hoisted(() => ({
   stop: vi.fn(),
 }));
 
-vi.mock('@/lib/anchor', () => ({
+vi.mock('@/lib/anchor', async (importOriginal) => ({
+  // The resolver's content-fingerprint helpers stay real.
+  ...(await importOriginal<typeof import('@/lib/anchor')>()),
   createAnchor: (el: Element) => ({ selector: `#${el.id}` }),
   resolveAnchor: (anchor: ElementAnchor) => {
     const element = document.querySelector(anchor.selector);

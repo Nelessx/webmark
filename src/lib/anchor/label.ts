@@ -1,18 +1,18 @@
 import { WEBMARK_HOST_TAG } from '../constants';
 import {
   POSITION_FOLLOWING,
-  TEXT_NODE,
   collapseWhitespace,
   composedParent,
   cssEscape,
+  isEditingHost,
   isFormControl,
+  isInsideEditable,
   queryRoot,
   tagOf,
   truncate,
 } from './dom';
-import { stableIdOf } from './fingerprint';
-import { rankClasses, stableClasses } from './stability';
-import { readText } from './text';
+import { rankClasses, stableClasses, stableIdOf } from './stability';
+import { firstTextFragment, readText } from './text';
 
 const SEPARATOR = ' → ';
 const MAX_PART = 40;
@@ -92,19 +92,28 @@ function attr(el: Element, name: string): string {
   return collapseWhitespace(el.getAttribute(name) ?? '');
 }
 
+/**
+ * Text typed by the user (contenteditable regions, custom text boxes) is never
+ * stored, same as the anchor text: labels fall back to authored attributes.
+ */
+function isTypedText(el: Element): boolean {
+  return isInsideEditable(el) || /^(?:textbox|searchbox)$/i.test(el.getAttribute('role') ?? '');
+}
+
 function labelText(el: Element): string {
-  return readText(el, 80, ' ');
+  return isTypedText(el) ? '' : readText(el, 80, ' ');
 }
 
 function accessibleName(el: Element): string {
   const control = isFormControl(el);
+  const typed = !control && isTypedText(el);
   return (
     attr(el, 'aria-label') ||
     labelledByText(el) ||
     attr(el, 'alt') ||
     (control ? fieldLabel(el) : '') ||
     attr(el, 'title') ||
-    (control ? buttonInputText(el) : headingInside(el) || svgTitle(el) || shortText(el)) ||
+    (control ? buttonInputText(el) : typed ? '' : headingInside(el) || svgTitle(el) || shortText(el)) ||
     attr(el, 'placeholder') ||
     attr(el, 'name') ||
     imageFileName(el)
@@ -158,18 +167,6 @@ function shortText(el: Element): string {
   return truncate(firstTextFragment(el) || text, MAX_PART);
 }
 
-function firstTextFragment(el: Element): string {
-  const walker = el.ownerDocument.createTreeWalker(el, 4 /* NodeFilter.SHOW_TEXT */);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const parent = node.parentElement;
-    if (!parent || /^(?:script|style|noscript|template|textarea|select)$/.test(parent.localName)) continue;
-    if (node.nodeType !== TEXT_NODE) continue;
-    const text = collapseWhitespace((node as Text).data);
-    if (text) return text;
-  }
-  return '';
-}
-
 /** "logo.svg" → "logo": a readable file name is better than nothing for an unlabelled image. */
 function imageFileName(el: Element): string {
   if (tagOf(el) !== 'img') return '';
@@ -199,7 +196,9 @@ function kindOf(el: Element): Kind | null {
     if (type === 'file') return { word: 'upload', fallback: 'File upload' };
     return { word: 'field', fallback: 'Field' };
   }
-  if (tag === 'textarea' || role === 'textbox' || role === 'searchbox') return { word: 'field', fallback: 'Field' };
+  if (tag === 'textarea' || role === 'textbox' || role === 'searchbox' || isEditingHost(el)) {
+    return { word: 'field', fallback: 'Field' };
+  }
   if (tag === 'select' || role === 'combobox' || role === 'listbox') return { word: 'dropdown', fallback: 'Dropdown' };
   if (/^h[1-6]$/.test(tag) || role === 'heading') return { word: '', fallback: 'Heading' };
   if (tag === 'table' || role === 'table' || role === 'grid') return { word: 'table', fallback: 'Table' };

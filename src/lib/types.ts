@@ -12,9 +12,30 @@ export interface DocRect {
 }
 
 /**
+ * The card, row or list item around an element, recorded when other elements
+ * look the same (repeated "Edit" / "Add to cart" buttons): the item's content
+ * is what tells them apart.
+ */
+export interface AnchorItem {
+  /** Levels from the element up to the item (1 = parent). */
+  depth: number;
+  /** Lower-cased, whitespace-collapsed text of the item, cut at a word boundary (max 120 characters). */
+  text: string;
+  /** Length of the item's whole normalised text (capped at 2000), to tell it from a bigger container that starts the same way. */
+  length: number;
+  /** No look-alike's item had the same text shape (digits masked): the item's numbers may change without it becoming another item. */
+  shapeUnique: boolean;
+  /** A test attribute of the item that matched only the item at capture time. */
+  testId?: { name: string; value: string };
+}
+
+/**
  * Everything we remember about an element so we can find it again later.
  * Several independent strategies are stored because any single one can break
  * when the page changes (redeploys, hashed class names, reordered lists...).
+ *
+ * Optional fields were added later; anchors stored before them lack them and
+ * are resolved with conservative fallback rules.
  */
 export interface ElementAnchor {
   /** Unique CSS selector at capture time, built from stable attributes where possible. */
@@ -39,6 +60,17 @@ export interface ElementAnchor {
   ancestorTags: string[];
   /** 1-based index among siblings with the same tag (like :nth-of-type). */
   nthOfType: number;
+  /** How many other elements had the same tag, identifying attributes and text at capture time (0 = unique). */
+  lookAlikes?: number;
+  /**
+   * False when same-kind elements differed from this one only in their numbers
+   * ("Order #1001" / "Order #1002"): then the numbers are part of its identity.
+   */
+  shapeUnique?: boolean;
+  /** Which hooks ('id', test attributes) matched only this element at capture time. */
+  uniqueHooks?: string[];
+  /** The item that tells this element apart from its look-alikes, when there were any. */
+  item?: AnchorItem;
 }
 
 export interface Note {

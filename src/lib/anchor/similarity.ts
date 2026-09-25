@@ -10,6 +10,11 @@ export function textShape(value: string): string {
   return value.replace(NUMBER, '#');
 }
 
+/** The numbers in `value`, in order, as one comparable string. */
+export function numbersOf(value: string): string {
+  return (value.match(NUMBER) ?? []).join(' ');
+}
+
 /**
  * Texts that differ only in their numbers (live counters, prices, dates) score
  * this much. High enough to follow a KPI card whose value changed, low enough
@@ -23,6 +28,8 @@ export interface TextProfile {
   bigrams: Map<number, number>;
   bigramCount: number;
   hasDigits: boolean;
+  /** See numbersOf(). */
+  numbers: string;
   shape: string;
   shapeBigrams: Map<number, number>;
   shapeBigramCount: number;
@@ -46,6 +53,7 @@ export function createTextProfile(text: string): TextProfile {
     bigrams: bigramsOf(text),
     bigramCount: Math.max(0, text.length - 1),
     hasDigits,
+    numbers: hasDigits ? numbersOf(text) : '',
     shape,
     shapeBigrams: hasDigits ? bigramsOf(shape) : new Map(),
     shapeBigramCount: Math.max(0, shape.length - 1),
@@ -74,12 +82,19 @@ function diceAgainst(counts: Map<number, number>, total: number, other: string):
   return (2 * shared) / (total + otherTotal);
 }
 
-/** Similarity 0..1 between the profiled text and `other` (normalised). Empty never matches non-empty. */
-export function profileSimilarity(profile: TextProfile, other: string): number {
+const ALWAYS = () => true;
+
+/**
+ * Similarity 0..1 between the profiled text and `other` (normalised). Empty
+ * never matches non-empty. `numbersMayChange` is consulted (lazily, it may be
+ * costly) before crediting texts that differ only in their numbers: in a list
+ * of "Order #1001" / "Order #1002" the numbers are the identity.
+ */
+export function profileSimilarity(profile: TextProfile, other: string, numbersMayChange: () => boolean = ALWAYS): number {
   if (profile.text === other) return 1;
   if (!profile.text || !other) return 0;
   let similarity = diceAgainst(profile.bigrams, profile.bigramCount, other);
-  if (profile.hasDigits && similarity < NUMBERS_ONLY_SIMILARITY && /\d/.test(other)) {
+  if (profile.hasDigits && similarity < NUMBERS_ONLY_SIMILARITY && /\d/.test(other) && numbersMayChange()) {
     const shape = textShape(other);
     const shapeSimilarity =
       shape === profile.shape ? 1 : diceAgainst(profile.shapeBigrams, profile.shapeBigramCount, shape);

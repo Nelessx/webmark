@@ -19,6 +19,9 @@ export const IDENTIFYING_ATTRIBUTES = [
   'src',
 ] as const;
 
+/** Every attribute anchoring reads: changes to any other attribute can't change what an anchor resolves to. */
+export const ANCHOR_ATTRIBUTES: readonly string[] = ['id', 'class', 'contenteditable', ...IDENTIFYING_ATTRIBUTES];
+
 export const MAX_ATTRIBUTE_LENGTH = 200;
 
 const IDENTIFYING = new Set<string>(IDENTIFYING_ATTRIBUTES);
@@ -30,12 +33,12 @@ export function collectAttributes(el: Element): Record<string, string> {
   if (!el.hasAttributes()) return out;
   // Nothing from password fields beyond what kind of field it is.
   if (isPasswordField(el)) return { type: 'password' };
-  const attributes = el.attributes;
-  for (let i = 0; i < attributes.length; i++) {
-    const attribute = attributes[i];
-    if (!attribute || !IDENTIFYING.has(attribute.name)) continue;
-    const value = normalizeAttribute(el, attribute.name, attribute.value);
-    if (value) out[attribute.name] = value;
+  // By name rather than through el.attributes: resolve reads thousands of
+  // candidates, and some engines (jsdom) build a costly NamedNodeMap per call.
+  for (const name of el.getAttributeNames()) {
+    if (!IDENTIFYING.has(name)) continue;
+    const value = normalizeAttribute(el, name, el.getAttribute(name) ?? '');
+    if (value) out[name] = value;
   }
   return out;
 }

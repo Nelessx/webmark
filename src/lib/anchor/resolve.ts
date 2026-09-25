@@ -1,8 +1,18 @@
-import { WEBMARK_HOST_TAG, isWebmarkNode } from '../constants';
+import { isWebmarkNode } from '../constants';
 import type { ElementAnchor } from '../types';
-import { cssEscape, tagOf } from './dom';
+import { countMatches, cssEscape, tagOf } from './dom';
 import { completeFeatures, readFeatures, type CandidateFeatures } from './fingerprint';
-import { prepareAnchor, scoreFeatures, type PreparedAnchor, type ScoreBreakdown } from './score';
+import { countLookAlikes, insideAny, sameTagElements, webmarkHosts } from './peers';
+import {
+  completeCandidate,
+  prepareAnchor,
+  scoreFeatures,
+  type PreparedAnchor,
+  type ScoreBreakdown,
+  type ScoreOptions,
+} from './score';
+import { normalizeForCompare, textShape } from './similarity';
+import { elementText } from './text';
 import { evaluateXPath } from './xpath';
 
 export interface ResolveResult {
@@ -12,7 +22,7 @@ export interface ResolveResult {
   method: 'selector' | 'xpath' | 'fuzzy';
 }
 
-/** Minimum score for a fuzzy match. */
+/** Minimum score for a fuzzy match, and the least confidence worth showing a note for. */
 export const ACCEPT_SCORE = 0.65;
 /** The winner must beat the runner-up by this much; otherwise it's ambiguous and we return null. */
 export const AMBIGUITY_MARGIN = 0.1;
@@ -21,9 +31,14 @@ const MAX_CANDIDATES = 12000;
 /** A direct hit on a stable id / test id survives this much penalty (e.g. its text was rewritten). */
 const HOOK_MIN_PENALTY = 0.8;
 const MAX_FUZZY_CONFIDENCE = 0.95;
+const CONFIRMED_CONFIDENCE = 0.9;
+/** Identical content at the stored position, with nothing else on the page looking the same. */
+const UNIQUE_POSITION_CONFIDENCE = 0.7;
 const POSITIONAL_SELECTOR = /:nth-(?:of-type|child)\(/;
 
 type Method = ResolveResult['method'];
+/** A direct hit resolves the anchor, is rejected (try the next strategy), or shows that it can't be resolved. */
+type Verdict = ResolveResult | 'reject' | 'ambiguous';
 
 interface Scored {
   features: CandidateFeatures;
@@ -34,8 +49,9 @@ interface Scored {
  * Find the element an anchor refers to, or null if nothing is convincing.
  *
  * 1. The stored selector, then the XPath — accepted only when the element's
- *    fingerprint confirms it (a positional selector may now point at the
- *    neighbouring card).
+ *    fingerprint confirms it. A position (nth-of-type, XPath index) may now
+ *    hold a look-alike, so identical content found there must also be unique
+ *    on the page or sit in the anchor's recorded item (card, row).
  * 2. Fuzzy search over same-tag elements, accepted only when the best
  *    candidate clears ACCEPT_SCORE and beats the runner-up by AMBIGUITY_MARGIN.
  *    An orphaned note is acceptable; a note on the wrong element is not.
@@ -46,13 +62,15 @@ export function resolveAnchor(anchor: ElementAnchor, doc: Document = document): 
 
   const selectorHit = findBySelector(prepared, doc);
   if (selectorHit) {
-    const direct = verifyDirectHit(prepared, selectorHit, 'selector', doc);
-    if (direct) return direct;
+    const verdict = verifyDirectHit(prepared, selectorHit, 'selector', doc);
+    if (verdict === 'ambiguous') return null;
+    if (verdict !== 'reject') return verdict;
   }
   const xpathHit = findByXPath(prepared, doc);
   if (xpathHit && xpathHit !== selectorHit) {
-    const direct = verifyDirectHit(prepared, xpathHit, 'xpath', doc);
-    if (direct) return direct;
+    const verdict = verifyDirectHit(prepared, xpathHit, 'xpath', doc);
+    if (verdict === 'ambiguous') return null;
+    if (verdict !== 'reject') return verdict;
   }
   return fuzzyResolve(prepared, doc, [selectorHit, xpathHit]);
 }
@@ -81,44 +99,57 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function countMatches(doc: Document, selector: string): number {
-  try {
-    return doc.querySelectorAll(selector).length;
-  } catch {
-    return 0;
-  }
+function result(element: Element, confidence: number, method: Method): ResolveResult {
+  return { element, confidence: round(confidence), method };
 }
 
-/** The matched stable id / test attribute is unique in the document, so it really identifies `el`. */
+/** The matched hook was unique when captured and still is, so it really identifies `el`. */
 function hookIsUnique(p: PreparedAnchor, el: Element, doc: Document): boolean {
-  if (p.id && el.getAttribute('id') === p.id && countMatches(doc, `#${cssEscape(p.id)}`) === 1) return true;
+  if (p.id && p.strongHooks.has('id') && el.getAttribute('id') === p.id && countMatches(doc, `#${cssEscape(p.id)}`) === 1) {
+    return true;
+  }
   return p.testAttributes.some(
     ([name, value]) =>
-      el.getAttribute(name) === value && countMatches(doc, `[${name}="${cssEscape(value)}"]`) === 1,
+      p.strongHooks.has(name) &&
+      el.getAttribute(name) === value &&
+      countMatches(doc, `[${name}="${cssEscape(value)}"]`) === 1,
   );
 }
 
-function verifyDirectHit(p: PreparedAnchor, el: Element, method: Method, doc: Document): ResolveResult | null {
+/**
+ * Whether identical content found at the stored position is the anchored
+ * element. A recorded item has already confirmed or contradicted it by now;
+ * this covers anchors without one.
+ */
+function positionHolds(p: PreparedAnchor, doc: Document): boolean {
+  if (p.lookAlikes === 0) return true;
+  // Look-alikes that nothing but their position tells apart: trust the
+  // position only while every one of them is still on the page.
+  if (p.lookAlikes !== undefined) return countLookAlikes(p, doc, p.lookAlikes + 2) === p.lookAlikes + 1;
+  // Stored before look-alikes were recorded: trust it only if nothing else looks the same.
+  return countLookAlikes(p, doc, 2) <= 1;
+}
+
+function verifyDirectHit(p: PreparedAnchor, el: Element, method: Method, doc: Document): Verdict {
+  const positional = method === 'xpath' || POSITIONAL_SELECTOR.test(p.anchor.selector);
   const features = readFeatures(el);
-  completeFeatures(features, p.rect !== null);
+  // A selector without positions was unique by structure when captured, so no
+  // look-alike can have slid into it: only a position needs the item's word.
+  if (positional) completeCandidate(p, features);
+  else completeFeatures(features, p.rect !== null);
   const breakdown = scoreFeatures(p, features);
 
   if (breakdown.strongHook && breakdown.penalty >= HOOK_MIN_PENALTY && hookIsUnique(p, el, doc)) {
-    return { element: el, confidence: round(Math.max(0.9, breakdown.score)), method };
+    return result(el, Math.max(CONFIRMED_CONFIDENCE, breakdown.score), method);
   }
-  if (!breakdown.exact) return null;
-  // Identical content at the same position. With a positional selector or an
-  // XPath the list may have shifted under us, so confidence depends on how
-  // much identifying content the anchor has.
-  const positional = method === 'xpath' || POSITIONAL_SELECTOR.test(p.anchor.selector);
-  const confidence = positional
-    ? Math.min(MAX_FUZZY_CONFIDENCE, 0.55 + 0.4 * p.informativeness)
-    : Math.max(0.9, breakdown.score);
-  return { element: el, confidence: round(confidence), method };
-}
-
-function insideWebmarkHost(el: Element, hosts: readonly Element[]): boolean {
-  return hosts.some((host) => host.contains(el));
+  if (!breakdown.exact) return 'reject';
+  if (!positional || breakdown.itemConfirmed) {
+    return result(el, Math.max(CONFIRMED_CONFIDENCE, breakdown.score), method);
+  }
+  // Identical content at the same position, but lists shift and sort: a
+  // look-alike may have slid into this slot.
+  if (!positionHolds(p, doc)) return p.lookAlikes === undefined ? 'ambiguous' : 'reject';
+  return result(el, Math.min(MAX_FUZZY_CONFIDENCE, UNIQUE_POSITION_CONFIDENCE + 0.25 * p.informativeness), method);
 }
 
 /** Cheap check used to thin out enormous candidate lists. */
@@ -143,29 +174,40 @@ interface Candidate {
  * (walking previous siblings per candidate is quadratic on long flat lists).
  */
 function collectCandidates(p: PreparedAnchor, doc: Document): Candidate[] {
-  let source: ArrayLike<Element> = doc.getElementsByTagName(p.tagName);
-  // Read `length` once: on a live collection some engines (jsdom) recount on every access.
-  let count = source.length;
-  if (count === 0) {
-    // Mixed-case SVG names ("linearGradient") are not found by a lower-case tag lookup.
-    source = Array.from(doc.querySelectorAll('*')).filter((el) => tagOf(el) === p.tagName);
-    count = source.length;
-  }
-  const hosts = Array.from(doc.querySelectorAll(WEBMARK_HOST_TAG));
+  const hosts = webmarkHosts(doc);
   const seenPerParent = new Map<Node | null, number>();
   const out: Candidate[] = [];
-  for (let i = 0; i < count; i++) {
-    const el = source[i];
-    if (!el) continue;
+  for (const el of sameTagElements(doc, p.tagName)) {
     const nthOfType = (seenPerParent.get(el.parentNode) ?? 0) + 1;
     seenPerParent.set(el.parentNode, nthOfType);
-    if (hosts.length && insideWebmarkHost(el, hosts)) continue;
+    if (hosts.length && insideAny(el, hosts)) continue;
     out.push({ element: el, nthOfType });
   }
   if (out.length <= MAX_CANDIDATES) return out;
   const related = out.filter((candidate) => sharesIdentity(p, candidate.element));
   // Still too many to rank reliably: better an orphaned note than a guess.
   return related.length <= MAX_CANDIDATES ? related : [];
+}
+
+/**
+ * Anchors stored before numbers were classified: numbers may change (a live
+ * KPI) only while no other candidate reads like the anchor up to its numbers;
+ * otherwise they tell look-alikes apart ("Order #1001" / "Order #1003").
+ * Decided lazily (it reads every candidate's text) and at most once.
+ */
+function pageNumbersPolicy(p: PreparedAnchor, staged: readonly { features: CandidateFeatures }[]): (() => boolean) | undefined {
+  if (p.numbersMayChange !== undefined || !p.text.hasDigits) return undefined;
+  let decided: boolean | undefined;
+  return () => {
+    if (decided !== undefined) return decided;
+    let sameShape = 0;
+    for (const { features } of staged) {
+      features.text ??= normalizeForCompare(elementText(features.element));
+      if (/\d/.test(features.text) && textShape(features.text) === p.text.shape && ++sameShape > 1) break;
+    }
+    decided = sameShape <= 1;
+    return decided;
+  };
 }
 
 function fuzzyResolve(p: PreparedAnchor, doc: Document, hitList: (Element | null)[]): ResolveResult | null {
@@ -181,6 +223,7 @@ function fuzzyResolve(p: PreparedAnchor, doc: Document, hitList: (Element | null
     return { features, bound: scoreFeatures(p, features, { hints, optimistic: true }).rank };
   });
   staged.sort((a, b) => b.bound - a.bound);
+  const options: ScoreOptions = { hints, numbersMayChange: pageNumbersPolicy(p, staged) };
 
   // Pass 2: read text/rect in bound order until nothing left can change the
   // outcome. Text is the expensive part, and on pages without an exact
@@ -191,8 +234,8 @@ function fuzzyResolve(p: PreparedAnchor, doc: Document, hitList: (Element | null
     if (second && bound <= second.breakdown.rank) break;
     if (best && bound <= best.breakdown.rank - AMBIGUITY_MARGIN) break;
     if (bound < ACCEPT_SCORE && (!best || best.breakdown.score < ACCEPT_SCORE)) break;
-    completeFeatures(features, p.rect !== null);
-    const scored: Scored = { features, breakdown: scoreFeatures(p, features, { hints }) };
+    completeCandidate(p, features);
+    const scored: Scored = { features, breakdown: scoreFeatures(p, features, options) };
     if (!best || scored.breakdown.rank > best.breakdown.rank) {
       second = best;
       best = scored;
@@ -203,6 +246,10 @@ function fuzzyResolve(p: PreparedAnchor, doc: Document, hitList: (Element | null
 
   if (!best || best.breakdown.score < ACCEPT_SCORE) return null;
   if (second && best.breakdown.rank - second.breakdown.rank < AMBIGUITY_MARGIN) return null;
+  // One of several identical elements that only their position told apart,
+  // and the position is gone: it may be any of them.
+  if (p.lookAlikes && !p.item && best.features.text === p.text.text) return null;
+  if (isWebmarkNode(best.features.element)) return null;
   return {
     element: best.features.element,
     confidence: round(Math.min(MAX_FUZZY_CONFIDENCE, best.breakdown.score)),

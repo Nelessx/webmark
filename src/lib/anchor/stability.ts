@@ -96,6 +96,11 @@ export function isStableId(id: string): boolean {
   return !id.split(/[-_.]+/).some((token) => looksRandomToken(token));
 }
 
+export function stableIdOf(el: Element): string | undefined {
+  const id = el.getAttribute('id');
+  return id && isStableId(id) ? id : undefined;
+}
+
 const stableClassCache = new Map<string, boolean>();
 
 /** Whether a class name is authored, stable and not a state toggle. Memoised: class names repeat a lot. */

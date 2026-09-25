@@ -64,16 +64,35 @@ function nextNode(node: Node, root: Node): Node | null {
   return null;
 }
 
+/** The first non-blank text node of `el`, skipping the same subtrees as readText(). */
+export function firstTextFragment(el: Element): string {
+  let visited = 0;
+  let node: Node | null = el.firstChild;
+  while (node && visited++ < MAX_VISITED_NODES) {
+    if (node.nodeType === TEXT_NODE) {
+      const text = collapseWhitespace((node as Text).data);
+      if (text) return text;
+    } else if (node.nodeType === ELEMENT_NODE && node.firstChild && !skipSubtree(node as Element)) {
+      node = node.firstChild;
+      continue;
+    }
+    node = nextNode(node, el);
+  }
+  return '';
+}
+
 /**
  * The text stored in an anchor and compared at resolve time. Form fields and
  * editable regions contribute only their authored hint (aria-label or
  * placeholder), never what the user typed; password fields contribute nothing.
+ * `max` (≤ MAX_ANCHOR_TEXT) lets a caller that only needs a prefix stop early.
  */
-export function elementText(el: Element): string {
+export function elementText(el: Element, max = MAX_ANCHOR_TEXT): string {
+  const limit = Math.min(max, MAX_ANCHOR_TEXT);
   if (isPasswordField(el)) return '';
   if (isFormControl(el) || isInsideEditable(el)) {
     const hint = el.getAttribute('aria-label') || el.getAttribute('placeholder') || '';
-    return collapseWhitespace(hint).slice(0, MAX_ANCHOR_TEXT);
+    return collapseWhitespace(hint).slice(0, limit);
   }
-  return readText(el, MAX_ANCHOR_TEXT);
+  return readText(el, limit);
 }
